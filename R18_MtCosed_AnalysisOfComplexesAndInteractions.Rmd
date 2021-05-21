@@ -1,0 +1,2156 @@
+---
+title: "R18_MTCosed_Outputs_AnalysisOfComplexesAndInteractions"
+output: html_notebook
+---
+date: 2020/04/02
+
+N.B. This notebook takes the outputs from CombinedAnalysis125678_noZeroes_CollapsedTranscripts.R. Check that it is up to date before running these scripts! 
+
+I want to explore the complexes present in the output from the R18 cosedimentation experiments. The outputs from the analysis script are the proteins found to either significantly (p-value < 0.1) increase their microtubule binding (log(1.15)) or decrease their microtubule binding (-log(1.15)); plus those proteins without a p-value, due to having 1 or 0 CON values (so p-value incalculable). For IncreaseMT_naP_StringNodesOutput, I copied the gene names from R18_0.1pvalue_0.15logratio and R18_NApvalue_0.15logratio into String-db (n = 171 + 193); for decrease, I copied the gene names from R18_0.1pvalue_-0.15logratio and R18_NApvalue_-0.15logratio into String-db (n = 102 + 128).
+
+I loaded these two datasets into String-db (https://string-db.org/) and set it to display links (edges) between proteins (nodes) if they were known to interact via evidence from an experiment, or information in a database, but not from appearing in the same paper. I downloaded the files of the links (IncreaseMT_naP_StringNodesOutput or DecreaseMT_naP_StringNodesOutput).
+
+```{r}
+setwd("\\\\csce.datastore.ed.ac.uk/csce/biology/users/s0906576/Research/Projects/Regulators/14-3-3/R18/LFQ_massSpec/R18_125678_complexesAndInteractionsAnalysis")
+
+#read input
+I <- read.csv("./STRING-db_outputs/IncreaseMT_naP_StringNodesOutput.csv")
+D <- read.csv("./STRING-db_outputs/DecreaseMT_naP_StringNodesOutput.csv")
+
+str(I)
+str(D)
+
+```
+str shows that some columns contain no data (mostly because I selected database & experimental links only), so let's remove the columns containing only zeroes.
+```{r}
+range(I$neighborhood_on_chromosome)
+range(I$gene_fusion)
+range(I$phylogenetic_cooccurrence)
+range(I$coexpression)
+range(I$automated_textmining)
+
+## all return 0 as upper and lower bound, so remove these columns
+I <- I[,-c(7:9, 11, 14)]
+
+## do same for D
+
+range(D$neighborhood_on_chromosome)
+range(D$gene_fusion)
+range(D$phylogenetic_cooccurrence)
+range(D$coexpression)
+range(D$automated_textmining)
+
+## all return 0 as upper and lower bound, so remove these columns
+D <- D[,-c(7:9, 11, 14)]
+
+## first column name has gotten mangled, so let's fix it
+names(I)[1] <- "node1"
+names(D)[1] <- "node1"
+
+```
+
+attempt a network graph
+
+```{r}
+## required packages
+library(igraph)
+library(GGally)
+library(network)
+library(sna)
+library(intergraph)
+
+#make a network object from an edge list (using igraph))
+networkI <- graph_from_data_frame(d=I, directed=F)
+networkD <- graph_from_data_frame(d=D, directed=F)
+
+netI = network(I[,c(1:2, 10)],
+              matrix.type = "edgelist",
+              ignore.eval = FALSE,
+              names.eval = "weights", 
+              directed = FALSE)
+
+
+#two ways to plot: built in plotting function (just requires igraph) N.B. no orphans!
+plot(networkI)
+plot(netI)
+plot(networkD)
+
+#or ggplot method in ggnet2 from GGally. Requires network and sna to work; requires intergraph to import igraph network object -- can customise more easily
+ggnet2(networkI, node.size = 6, node.color = "black", edge.size = 1, edge.color = "grey")
+ggnet2(networkD, node.size = 6, node.color = "black", edge.size = 1, edge.color = "grey")
+
+
+netI %v% "eIF3" = ifelse(network.vertex.names(netI) %in% c("CG10306", "eif3-S6", "eIF3-S8", "eIF-3p66", "eIF3-S5-1",
+                                                           "eIF3ga", "eIF3-S10", "Trip1", "Tango7", "eIF-3p40", "pix",
+                                                           "CG5642", "Adam", "eIF3-S9"),
+                        "eIF3 subunits", "other proteins")
+ggnet2(netI, color = "eIF3")
+
+```
+
+Plot the complexes on the R18 volcano plot
+```{r}
+## read in d dataset from the R18 script
+results <- read.csv("R18Script_outputs/d_fromCombAnal125678_noZero_collRNA.csv")
+
+#required packages
+library(ggplot2)
+
+#define groups
+eIF3 <- c("CG10306", "eif3-S6", "eIF3-S8", "eIF-3p66", "eIF3-S5-1", "eIF3ga", "eIF3-S10", "Trip1", "Tango7", "eIF-3p40", "pix", "CG5642", "Adam", "eIF3-S9")   # not detected: eIF3d2, eIF3f2, eIF3g2
+
+preribosome <- c("CG3224", "bys", "CG3527", "CG2875", "RpS7", "CG13097", "CG13096", "CG5033", "CG7006", "ppan", "Nnp-1", "l(3)72Dn", "Fib", "CG13185", "Nop56", "CG7338", "CG2972", "CG8064", "CG9246", "l(2)k09022", "l(3)07882", "eIF6", "CG4554", "nop5", "RIOK1", "CG3735", "CG4364", "CG12301", "CG9107", "CG6316", "Mat89Ba") #not present CG32409, Rlb1, CG1542, CG4866, Bka, CG7728, CG6769, mRpL1, CG7246, Rbm13, CG1789, Ip259, CG2260, l(2)34Fd, CG16753, CG672, CG12325, RpLP0-like, CG1671, CG3008, CG11030, Wdr37, U3-55K, wcd, RIOK2, CG17652, dbe, CG3817, CG18178, CG6712, CG5728, CG5645, CG11920, CG7275, CG10909, CG8939, CG8461, CG9799. 31 present, 38 absent.
+
+Spliceosome <- c("SF1", "Prp31", "SmD2", "Cdc5", "Cbp20", "Prp3", "Prp19", "pea", "Hel25E", "CG11964", "l(1)G0007", "SmE", "Dhx15", "SmB", "Bx42", "CG31368", "CG6227", "snf", "U2af38", "SmD1", "noi", "snRNP-U1-70K", "CG3542", "CG13277", "Snp", "CG7337", "Prp8") #not detected: Slu7, CG11839, CG10418, CG2685, U2af50, CG9344, abs, Gem2, l(3)72Ab, Prp18, sip1, SNRPG, tra2, l(2)37Cb, CG7974, CG6015, ncm, CG3294, l(1)10Bb, nonA-l, CG11586, SmF, CG6610
+
+LargeRibosome <- c("RpL40", "mRpL17", "RpL3", "RpL30", "RpL11", "RpL5", "RpL22", "mRpL19", "RpL15", "RpL17",
+                   "RpL7-like", "RpL10", "mRpL39", "mRpL4", "RpL12", "RpL10Ab", "mRpL37", "RpL4", "mRpS30",
+                   "RpL24-like", "RpLP1", "mRpL2", "mRpL12", "RpL23A", "mRpL3", "RpL23", "mRpL53", "mRpL44", "RpLP0") #not detected: mRpL1, mRpL28, RpL34b, mRpL30, RpL18, mRpL27, RpL35, l(2)10685, mRpL48, mRpL54, mRpL52, mRpL18, RpL27, mRpL51, 5SrRNA, CG6094, RpLP0-like, RpL7, mRpL33, mRpL32, RpL13, mRpL46, RpL27A ,mRpL50, mRpL41, mRpL36, RpL34a, mRpL40, mRpL55, RpL10Aa, RpL36, RpL31, RpL41, RpL38, mRpL24, mRpL10, RpL37A, mRpL22, mRpL14, RpL13A, RpL6, mRpL9, RpL8, mRpL42, RpL35A, mRpL45, RpL37b, RpL26, mRpL35, mRpL16, mRpL38, mRpL11, mRpL43, CG30100, RpL19, mRpL47, RpL37a, RpL24, mRpL23, mRpL20, mRpL49, mRpL21, RpL21, mRpL15, RpLP2, RpL36A, RpL28, RpL9, RpL39, mRpL13, RpL18A, mRpL34, RpL29, RpL7A, RpL32, RpL22-like, RpL14
+
+SmallRibosome <- c("RpL40", "RpS27", "mRpS11", "RpS18", "RpS16", "RpS8", "mRpS25", "RpS3A", "RpS19a", "mRpS9", "RpS24", "RpS13", "Rack1", "mRpS22", "mRpS35", "RpS17", "RpS15Aa", "bonsai", "RpS10b", "RpS2", "RpS23", "CG7414", "mRpS30", "RpS9", "eIF2D", "sta", "RpS6", "mRpS34", "mRpS7", "mRpS5", "RpS4", "RpS20", "RpS5a", "mRpL12", "mRpL3", "mRpS18A", "RpS3", "mRpS18B", "mRpS29", "RpS25", "RpS14b", "RpS7")
+#not detected: RpS19b, mRpS33, RpS28-like, RpS11, RpS26, mRpS16, RpS10a, mRpS28, tko, RpS15Ab, mRpL42, RpS15, mRpS21, RpS21, mRpS26, mRpS14, mRpS31, cav, mRpS23, RpS28a, RpS28b, RpS30, mRpS10, CG11700, RpS29, RpS27A, mRpS24, RpS5b, RpS14a,mRpS18C, mRpS2, mRpS17, mRpS6, RpS12
+
+Spindle <- c("Ald", "CLIP-190", "Map205", "ial", "Cbs", "CG18190", "Cp190", "Cam", "borr", "SA", "asp", "mad2", "chb", "sub", "spg", "cnn", "Mtor", "dgt2", "CycB", "Incenp", "mei-38", "sle", "rod", "Slik", "polo", "mars", "dgt5", "sgg", "shi", "shot", "Patronin", "pav", "Moe", "Klp3A", "CG3437", "Klp10A", "feo", "alphaTub85E", "Gl", "sip2", "Chro", "dgt6", "clu", "nesd", "Mink", "Eb1", "toc", "gammaTub37C", "Ran", "Khc", "Grip1", "ssp3", "ncd", "tum", "ssp2", "Zwilch", "Klp67A", "Klp61F", "Clc", "msps", "Grip75", "Grip84", "CG6664", "Tao", "Mad1", "Zw10", "CG7337", "tacc", "CG9286", "fzy") #not detected: galla-1, det, CG5725, TBCB, Asator, CG15564, twe, aust, Axs, AurA, gammaTub23C, wac, CG7716, CG15306, aladin, Mzt1, mira, cdc14, alphaTub84B, mud, fzr, DCX-EMAP, CG32232, JTBR, nudE, Klp59D, Klp59C, bora, Mps1, spag4, dgt4, vih, Apc2, Arl8, Grip128, Grip163, wake, Rep, Sak, CG2955, Meics, Mst27D, Grip91, Kebab, CG18109. GO0005819 genes in Flybase. 70 present, 45 absent
+
+UbLig <- c("CG8184", "poe", "ida", "Ubr3", "l(3)76BDr", "CG3356", "Prp19", "APC7", "Ubr1", "CG11984", "Cdc16", "stc", "CG5604", "SkpA", "hyd", "Cdc23", "bon", "ctrip", "Sherpa", "Cdc27") #not detected: Mul1, Roc2, SkpB, mib1, CG34375, dgrn, roq, CG6752, CG33144, Trim9, CG15286, CG5003, Smurf, CG15814, CG17717, snama, Traf6, snky, CG3187, CG2681, ImgA, park, CG4813, CG7694, CG15141, mura, Neurl4, LUBEL, Hakai, CG13994, tn, CG5347, CG9014, Roc1a, msl-2, CG9941, Nedd4, mib2, Roc1b, CG8974, Trc8, Pli, Nse1, I-3, sinah, CG6923, CG4080, CG6179, Iru, CG11360, neur, Sce, CG43089, CG31642, POSH, sina, CG31687, STUB1, CG10761, CG2991, CG12477, CG31835, Rchy1, CG17329, CG14646, CG2617, CG14102, CG17991, CG15800, CG14435, CG14937, CG5555, CG12362, mdlc, CG17019, CG14339, Cbl, CG5334, CG42585, SkpD, CG4325, Mkrn1, Pits, CG13481, ari-1, CG9855, Diap2, CG13605, CG7326, CG32581, CG32847, mus302, Sip3, gzl, CG34308, CG13442, Fancl, CG3894, CG4238, CG7376, nopo, CG13088, Diap1, SkpC, Ube3a, CG42797, CG12099, CG8141, gol, CG13344, SkpE, elgi, Topors, Rnf146, CG14983, dx, CG1317, CG2218, CG32850, ari-2, SkpF, Su(dx), CG16781, Skp2, CG33552, CG3526, hiw, HERC2, CG10916, Dnr1. GO0061630 genes in Flybase. 20 present, 133 absent.
+
+MAPs <- c("asp", "awd", "Cp190", "Gl", "Khc", "ncd", "shi", "sub", "kst", "Klp61F", "Klp67A", "Klp68D", "Klp98A", "Map60", "jar", "Klp3A", "Moe", "pav", "pnut", "shot", "bif", "toc", "CLIP-190", "chb", "Drp1", "tacc", "Eb1", "msps", "lva", "feo", "sofe", "Klp10A", "Klp31E", "BuGZ", "mars", "Mink", "dgt6", "cmet", "cana", "Jupiter", "Rfabg", "beta-Spec", "alpha-Spec","DCX-EMAP", "mei-38", "Incenp", "Opa1", "Patronin", "ens")
+#not found CG14025, capp, hook, cos, nod, spir, neb, Klp64D, Apc, Khc-73, Apc2, kebab, Gas8, pigs, pod1, CG11584, CG12395, CG14535, CG4537, dgt2, Klp59C, Klp59D, wac, CG16719, nudE, Cep135, CG17122, CG13251, kat-60L1, CG17816, Kif19A, IFT54, anon-WO0140519.212, spas, CG10845, Kif3C, kat80, kat60, CG30069, Efa6, CG32318, futsch, corn, CG11620, scra, ReepA, Klp54D, tau, unc-104, Girdin
+
+## plot the graph
+p1<-ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+  theme_light(base_size = 15, base_family = "")+
+  geom_point(colour = "grey") +
+  scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+  scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+  labs(x = "", y = "p value")+
+  geom_point(data = subset(results, results$logSAM > 23))+
+  #geom_point(data = subset(results, results$geneName %in% eIF3 == TRUE), colour = "red", size = 2)+
+  #geom_point(data = subset(results, results$geneName %in% Spliceosome == TRUE), colour = "darkred", size = 2)+
+  #geom_point(data = subset(results, results$geneName %in% LargeRibosome == TRUE), colour = "blue", size = 2)+
+  #geom_point(data = subset(results, results$geneName %in% SmallRibosome == TRUE), colour = "yellow", size = 2)+
+  geom_point(data = subset(results1, results1$geneName %in% Spindle == TRUE), colour = "gold", size = 2)#+
+  #geom_point(data = subset(results, results$geneName == "CG14215"), colour = "orange", size = 2)
+
+## try to plot the ratios in order, without p values
+## first, order the results from greatest decrease to greatest increase
+results1 <- results[order(results$logratio),]
+## add a number to be able to plot this oder on the x axis
+results1$rownums <- 1:1897
+#plot
+p2 <- ggplot(data = results1, aes(x = rownums, y = logratio))+
+  geom_point()+
+  #scale_y_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+  #geom_point(data = subset(results1, results1$geneName %in% eIF3 == TRUE), colour = "red", size = 2)+
+  #geom_point(data = subset(results1, results1$geneName %in% Spliceosome == TRUE), colour = "darkred", size = 2)+
+  #geom_point(data = subset(results1, results1$geneName %in% LargeRibosome == TRUE), colour = "blue", size = 2)+
+  #geom_point(data = subset(results1, results1$geneName %in% SmallRibosome == TRUE), colour = "yellow", size = 2)+
+  #geom_point(data = subset(results1, results1$geneName %in% Spindle == TRUE), colour = "gold", size = 2)+
+  geom_point(data = subset(results1, results1$geneName == "CG14215"), colour = "orange", size = 2)
+
+```
+
+Can we bulk predict 14-3-3 binding sites and plot them on the graph? This method only for part of graph; 
+see next chunk for whole dataset analysis (better)
+```{r}
+## file 1 has predictions for increase side
+## N.B. only proteins with ratio > 0.1 were predicted for!
+incpred14.3.3 <- read.csv("14-3-3Pred_outputs/0.15logratio_0.1pvalueORnapvalue_1433pred.csv")[1:116357,]
+
+  ## subset out those predicted highly by all 3 methods
+  ## so ANN >= 0.55, PSSM >= 0.80, SVM >= 0.25
+
+  inc_3meth <- subset(incpred14.3.3, incpred14.3.3$ANN >= 0.55)
+  inc_3meth <- subset(inc_3meth, inc_3meth$PSSM >= 0.80)
+  inc_3meth <- subset(inc_3meth, inc_3meth$SVM >= 0.25)
+  ## and then choose only those with a consensus similar to pav/ncd (e.g. greater than 1)
+  iHC14.3.3_1 <- subset(inc_3meth, inc_3meth$Consensus > 1)$GeneName
+  iHC14.3.3_1.5 <- subset(inc_3meth, inc_3meth$Consensus > 1.5)$GeneName
+
+## file 2 has predictions for decrease side
+## N.B. only proteins with ratio > -0.1 were predicted for!
+decpred14.3.3 <- read.csv("14-3-3Pred_outputs/-0.15logratio_0.1pvalueORnapvalue_1433pred.csv")
+  
+  ## subset out those predicted highly by all 3 methods
+  ## so ANN >= 0.55, PSSM >= 0.80, SVM >= 0.25
+
+  dec_3meth <- subset(decpred14.3.3, decpred14.3.3$ANN >= 0.55)
+  dec_3meth <- subset(dec_3meth, dec_3meth$PSSM >= 0.80)
+  dec_3meth <- subset(dec_3meth, dec_3meth$SVM >= 0.25)
+  ## and then choose only those with a consensus similar to pav/ncd (e.g. greater than 1)
+
+  dHC14.3.3_1 <- subset(dec_3meth, dec_3meth$Consensus > 1)$GeneName
+  dHC14.3.3_1.5 <- subset(dec_3meth, dec_3meth$Consensus > 1.5)$GeneName
+
+
+p1<-ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+  theme_light(base_size = 15, base_family = "")+
+  geom_point(colour = "grey") +
+  scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+  scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+  labs(x = "", y = "p value")+
+  geom_point(data = subset(results, results$logSAM > 23))+
+  geom_point(data = subset(results1, results1$geneName %in% iHC14.3.3_1 == "TRUE"), colour = "yellow", size = 2)+
+  geom_point(data = subset(results1, results1$geneName %in% dHC14.3.3_1 == "TRUE"), colour = "yellow", size = 2)
+
+## interactive graph (good for troubleshooting as it has genenames on mouseover)
+
+library(plotly)
+p<-ggplotly(p1, tooltip = 'text')
+Sys.setenv("plotly_username"="C.Repton")
+Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+api_create(p, filename = "R18_interactiveGraph_14-3-3")
+
+```
+Can I predict 14-3-3 sites for all the proteins in the dataset, not just those that increase/decrease significantly, or without a p-value?
+```{r}
+## use the uniprot identifiers to get the fastas
+results$uniprot <- results$Accession.No
+ results$uniprot <- lapply(results$uniprot, gsub, pattern="^..\\|", replacement = "", ignore.case = TRUE) 
+ results$uniprot <- lapply(results$uniprot, gsub, pattern="\\|.*$", replacement = "", ignore.case = TRUE) 
+ results$uniprot <- lapply(results$uniprot, gsub, pattern="\\-.*$", replacement = "", ignore.case = TRUE) 
+ results$uniprot <- as.factor(as.character(results$uniprot))
+ 
+ ## 14-3-3 pred can only handle 100 fastas at a time, so need to split the list into 19 small lists
+ #paste into Uniprot ID mapper and convert to fastas
+ 
+ # writeClipboard(as.character(results$uniprot[1:99]))
+ # writeClipboard(as.character(results$uniprot[100:199]))
+ # writeClipboard(as.character(results$uniprot[200:299]))
+ # writeClipboard(as.character(results$uniprot[300:399]))
+ # writeClipboard(as.character(results$uniprot[400:499]))
+ # writeClipboard(as.character(results$uniprot[500:599]))
+ # writeClipboard(as.character(results$uniprot[600:699]))
+ # writeClipboard(as.character(results$uniprot[700:799]))
+ # writeClipboard(as.character(results$uniprot[800:899]))
+ # writeClipboard(as.character(results$uniprot[900:999]))
+ # writeClipboard(as.character(results$uniprot[1000:1099]))
+ # writeClipboard(as.character(results$uniprot[1100:1199]))
+ # writeClipboard(as.character(results$uniprot[1200:1299]))
+ # writeClipboard(as.character(results$uniprot[1300:1399]))
+ # writeClipboard(as.character(results$uniprot[1400:1499]))
+ # writeClipboard(as.character(results$uniprot[1500:1599]))
+ # writeClipboard(as.character(results$uniprot[1600:1699])) #removed extra transcripts mapped to fau Q9VGX3
+ # writeClipboard(as.character(results$uniprot[1700:1799]))
+ # writeClipboard(as.character(results$uniprot[1800:1897]))
+ 
+## upload each file to 14-3-3pred and download the results as a csv; name as e.g. 1_99_output.csv
+## read in each file, and rbind to make one long file
+a <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1_99_output.csv")
+b <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/100_199_output.csv")
+c <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/200_299_output.csv")
+d <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/300_399_output.csv")
+e <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/400_499_output.csv")
+f <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/500_599_output.csv")
+g <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/600_699_output.csv")
+h <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/700_799_output.csv")
+i <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/800_899_output.csv")
+j <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/900_999_output.csv")
+k <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1000_1099_output.csv")
+l <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1100_1199_output.csv")
+m <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1200_1299_output.csv")
+n <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1300_1399_output.csv")
+o <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1400_1499_output.csv")
+p <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1500_1599_output.csv")
+q <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1600_1699_output.csv")
+r <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1700_1799_output.csv")
+s <- read.csv("14-3-3Pred_outputs/predictingWholeDataset/1800_1897_output.csv")
+
+predWD <- rbind(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s)
+rm(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s)
+
+  ## subset out those predicted highly by all 3 methods
+  ## so ANN >= 0.55, PSSM >= 0.80, SVM >= 0.25
+
+  WD3meth <- subset(predWD, predWD$ANN >= 0.55)
+  WD3meth <- subset(WD3meth, WD3meth$PSSM >= 0.80)
+  WD3meth <- subset(WD3meth, WD3meth$SVM >= 0.25)
+  
+  #write.csv(WD3meth, "WD3meth.csv")
+  
+  ## and then choose only those with a consensus similar to pav/ncd (e.g. greater than 1)
+  HC14.3.3WD_0.9 <- subset(WD3meth, WD3meth$Consensus > 0.9)$Identifier
+  HC14.3.3WD_1 <- subset(WD3meth, WD3meth$Consensus > 1)$Identifier
+  HC14.3.3WD_1.2 <- subset(WD3meth, WD3meth$Consensus > 1.2)$Identifier
+  HC14.3.3WD_1.4 <- subset(WD3meth, WD3meth$Consensus > 1.4)$Identifier
+  HC14.3.3WD_1.5 <- subset(WD3meth, WD3meth$Consensus > 1.5)$Identifier
+
+##plot on graph
+library(ggplot2)
+p2<-ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+  theme_light(base_size = 15, base_family = "")+
+  geom_point(colour = "grey") +
+  scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+  scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+  labs(x = "", y = "p value")+
+  #geom_point(data = subset(results, results$logSAM > 23))+
+  geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == "TRUE"), shape = 15, size = 2)#+
+  #geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1.2 == "TRUE"), colour = "orange", size = 2)+
+  #geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1.5 == "TRUE"), colour = "red", size = 2)
+
+library(plotly)
+p<-ggplotly(p2, tooltip = 'text')
+Sys.setenv("plotly_username"="C.Repton")
+Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+api_create(p, filename = "R18_interactiveGraph_14-3-3_WD")
+
+## are there more yellow dots on increase side than decrease side?
+nrow(subset(results, results$uniprot %in% HC14.3.3WD_1 == "TRUE")) # n=512 yellow dots total, including NA p-values
+NApvalue <- subset(results, is.na(results$pairedp.value) == TRUE)
+incNApvalue <- subset(NApvalue, NApvalue$logratio > 0)
+decNApvalue <- subset(NApvalue, NApvalue$logratio < 0)
+Have.pvalue <- subset(results, is.na(results$pairedp.value) == FALSE)
+incHave.pvalue <- subset(Have.pvalue, Have.pvalue$logratio > 0)
+decHave.pvalue <- subset(Have.pvalue, Have.pvalue$logratio < 0)
+
+nrow(NApvalue) # 393 without P-value
+nrow(subset(NApvalue, NApvalue$uniprot %in% HC14.3.3WD_1 == "TRUE")) #96 yellow, 297 not.
+nrow(subset(incNApvalue, incNApvalue$uniprot %in% HC14.3.3WD_1 == "TRUE")) #58 yellow
+nrow(subset(decNApvalue, decNApvalue$uniprot %in% HC14.3.3WD_1 == "TRUE")) #38 yellow
+
+
+nrow(Have.pvalue) # 1504 with P-value
+nrow(subset(Have.pvalue, Have.pvalue$uniprot %in% HC14.3.3WD_1 == "TRUE")) #416 yellow, 1088 not.
+nrow(subset(incHave.pvalue, incHave.pvalue$uniprot %in% HC14.3.3WD_1 == "TRUE")) #263 yellow
+nrow(subset(decHave.pvalue, decHave.pvalue$uniprot %in% HC14.3.3WD_1 == "TRUE")) #153 yellow
+
+# make 2 tables for chi-sq tests
+pval <- as.table(rbind(c(263, 560), c(153, 528)))
+dimnames(pval) <- list(logratio = c("increase", "decrease"),
+                    pred14.3.3 = c("yes", "no"))
+chisq.test(pval)
+
+napval <- as.table(rbind(c(58, 161), c(38, 136)))
+dimnames(napval) <- list(logratio = c("increase", "decrease"),
+                    pred14.3.3 = c("yes", "no"))
+chisq.test(napval)
+
+## so there's a difference for those proteins with p-values, but not for the NA pvalues.
+## this is interesting! We were working on the assumption that those with nothing in control, for example, might be super affected by 14-3-3. I suppose they still might be, but masked by proteins that were detected by chance.
+
+```
+Can we do a similar thing to summarise the GO term analysis?
+```{r}
+##eIF3
+eIF3pred <- subset(results, results$geneName %in% eIF3 == TRUE) 
+#13 eIF subunits in dataset (with or without p-value)
+eIF3pred <- subset(eIF3pred, eIF3pred$uniprot %in% HC14.3.3WD_1) 
+#5 with 14-3-3 predictions above 1 -- 
+    #eIF3ga, eIF-3p40, eIF3-S5-1, CG5642, eIF-3p66 
+noteIFpred <- subset(results, results$geneName %in% eIF3 == FALSE) #1884 total non-eIF
+noteIFpred <- subset(noteIFpred, noteIFpred$uniprot %in% HC14.3.3WD_1) #507 have prediction, 1377 do not
+  ##compare eIF3 (increase and decrease) to all other proteins
+  pval <- as.table(rbind(c(5, 8), c(507, 1377)))
+  dimnames(pval) <- list(logratio = c("eIF3", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 0.38625, df = 1, p-value = 0.5343
+  ##compare eIF3 increase to decrease
+  pval <- as.table(rbind(c(5, 6), c(0, 2)))
+  dimnames(pval) <- list(logratio = c("increase", "decrease"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 0.18097, df = 1, p-value = 0.6705
+  
+  
+#spliceosome  
+Spliceosomepred <- subset(results, results$geneName %in% Spliceosome == TRUE) #27 Spliceosome subunits in dataset (with or without p-value)
+Spliceosomepred <- subset(Spliceosomepred, Spliceosomepred$uniprot %in% HC14.3.3WD_1) 
+#7 with 14-3-3 predictions above 1 --
+    #Snp, SF1, CG3542, CG7337, Prp19, Prp8, CG31368
+  pval <- as.table(rbind(c(4, 0), c(14, 1)))
+  dimnames(pval) <- list(logratio = c("increase", "decrease"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) 
+  #compare to non-spliceosome
+  notSplPred <- subset(results, results$geneName %in% Spliceosome == FALSE) #1870 non-splicesome 
+  notSplPred <- subset(notSplPred, notSplPred$uniprot %in% HC14.3.3WD_1) #505 with 14-3-3 predictions above 1, 1365 without
+  pval <- as.table(rbind(c(7, 20), c(505, 1365)))
+  dimnames(pval) <- list(logratio = c("Spl", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 5.9308e-29, df = 1, p-value = 1   N.S.
+  
+  
+
+LRibpred <- subset(results, results$geneName %in% LargeRibosome == TRUE) #29 Large Ribosome subunits in dataset (with or wihout p-value)
+LRibpred <- subset(LRibpred, LRibpred$uniprot %in% HC14.3.3WD_1) # 1 with 14-3-3 predictions above 1
+  notLRibPred <- subset(results, results$geneName %in% LargeRibosome == FALSE) #1868 non-large ribosome
+  notLRibPred <- subset(notLRibPred, notLRibPred$uniprot %in% HC14.3.3WD_1) #511 with 14-3-3 predictions above 1, 1357 without
+  pval <- as.table(rbind(c(1, 28), c(511, 1357)))
+  dimnames(pval) <- list(logratio = c("LRib", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 7.114, df = 1, p-value = 0.007648** signficantly lower in Large Ribosome than background
+  #12 out of 157 large ribosome genes in fly genome have a consensus > 1 predicted 14-3-3 binding site
+  #compare in experiment to those in genome
+  pval <- as.table(rbind(c(1, 28), c(12, 145)))
+  dimnames(pval) <- list(logratio = c("exp", "genome"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) # X-squared 1.1331, p-value 0.2871
+
+
+SRibpred <- subset(results, results$geneName %in% SmallRibosome == TRUE) #42 Small Ribosome subunits in dataset (with or wihout p-value)
+SRibpred <- subset(SRibpred, SRibpred$uniprot %in% HC14.3.3WD_1) # 3 with 14-3-3 predictions above 1
+  notSRibPred <- subset(results, results$geneName %in% SmallRibosome == FALSE) #1855 non-small ribosome
+  notSRibPred <- subset(notSRibPred, notSRibPred$uniprot %in% HC14.3.3WD_1) #509 with 14-3-3 predictions above 1, 1346 without
+  pval <- as.table(rbind(c(3, 39), c(509, 1346)))
+  dimnames(pval) <- list(logratio = c("SRib", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 7.5867, df = 1, p-value = 0.00588** signficantly lower in Small Ribosome than background
+  #12 out of 112 small ribosome genes in fly genome have a consensus >1 predicted 14-3-3 binding site
+  #compare in experiment to those in genome
+  pval <- as.table(rbind(c(3, 39), c(12, 112)))
+  dimnames(pval) <- list(logratio = c("exp", "genome"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) # X-squared 0.033788, p-value 0.8542
+
+
+pRibpred <- subset(results, results$geneName %in% preribosome == TRUE) #30 preribosome subunits in dataset (with or wihout p-value)
+pRibpred <- subset(pRibpred, pRibpred$uniprot %in% HC14.3.3WD_1) # 7 with 14-3-3 predictions above 1
+  notpRibPred <- subset(results, results$geneName %in% preribosome == FALSE) #1867 non-small ribosome
+  notpRibPred <- subset(notpRibPred, notpRibPred$uniprot %in% HC14.3.3WD_1) #505 with 14-3-3 predictions above 1, 1362 without
+  pval <- as.table(rbind(c(7, 23), c(505, 1362)))
+  dimnames(pval) <- list(logratio = c("pRib", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 0.061257, df = 1, p-value = 0.8045 N.S.
+
+spinpred <- subset(results, results$geneName %in% Spindle == TRUE) #68 spindle proteins in dataset (with or wihout p-value)
+spinpred <- subset(spinpred, spinpred$uniprot %in% HC14.3.3WD_1) # 30 with 14-3-3 predictions above 1
+  ## compare spindle to non-spindle
+  notspnpred <- subset(results, results$geneName %in% Spindle == FALSE) #1829 non-spindles
+  notspnpred <- subset(notspnpred, notspnpred$uniprot %in% HC14.3.3WD_1) #482 with, 1347 without
+  pval <- as.table(rbind(c(30, 38), c(482, 1347)))
+  dimnames(pval) <- list(logratio = c("Spn", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 9.6175, df = 1, p-value = 0.001927**
+  #no NAs
+  pval <- as.table(rbind(c(17, 28), c(10, 7)))
+  chisq.test(pval) #X-squared = 1.4494, df = 1, p-value = 0.2286
+
+ULpred <- subset(results, results$geneName %in% UbLig == TRUE) #20 UbLig subunits in dataset (with or wihout p-value)
+ULpred <- subset(ULpred, ULpred$uniprot %in% HC14.3.3WD_1) # 8 with 14-3-3 predictions above 1
+  notULPred <- subset(results, results$geneName %in% UbLig == FALSE) #1877 non-ubiquitin ligase
+  notULPred <- subset(notULPred, notULPred$uniprot %in% HC14.3.3WD_1) #504 with 14-3-3 predictions above 1, 1373 without
+  pval <- as.table(rbind(c(8, 12), c(504, 1373)))
+  dimnames(pval) <- list(logratio = c("ubLig", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 1.1331, df = 1, p-value = 0.2871 N.S.
+
+##MAPs GO term
+MAPpred <- subset(results, results$geneName %in% MAPs == TRUE) 
+#48 eIF subunits in dataset (with or without p-value)
+MAPpred <- subset(MAPpred, MAPpred$uniprot %in% HC14.3.3WD_1) 
+#22 with 14-3-3 predictions above 1 -- bif, Opa1, Klp68D, dgt6, toc, jar, cmet, Cp190, Mink, cana, lva, kst, pav, shi, ncd, ens, tacc, Khc, Klp61F, Klp3A, CLIP-190, Rfabg
+    # 
+notMAPpred <- subset(results, results$geneName %in% MAPs == FALSE) #1849 total non-MAP
+notMAPpred <- subset(notMAPpred, notMAPpred$uniprot %in% HC14.3.3WD_1) #490 have prediction, 1359 do not
+  ##compare MAP (increase and decrease) to all other proteins
+  pval <- as.table(rbind(c(22, 26), c(490, 1359)))
+  dimnames(pval) <- list(logratio = c("MAP", "other proteins"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #X-squared = 7.9197, df = 1, p-value = 0.00489 **
+  ##compare MAP increase to decrease
+  pval <- as.table(rbind(c(14, 18), c(8, 8)))
+  dimnames(pval) <- list(logratio = c("increase", "decrease"),
+                    pred14.3.3 = c("yes", "no"))
+  chisq.test(pval) #0.01049, df = 1, p-value = 0.9184 N.S.
+
+```
+
+
+For the sake of a linear model, it would be interesting to put the 14-3-3 prediction scores onto the results file. The question is, should I use highest score, or average score?
+N.B. linear regression assumptions not met. Do not use until figure out which model is appropriate.
+N.B.2 this problem solved in line 580
+```{r}
+# let's do highest first
+  # first remove 'sequence' column -- it's left over from uploading the uniprot IDs 100 at a time, so it's not meaningful for analysis
+  predWD <- predWD[,2:8]
+  # next, need to find the highest consensus for each Identifier
+  # can use data.table approach
+  library(data.table)
+  predTop <- as.data.table(predWD)[, .SD[which.max(abs(Consensus))], by=Identifier]
+  # add to results data.frame
+    #need quotemeta function
+    library(stringr)
+    quotemeta <- function(string) {
+     str_replace_all(string, "(\\W)", "\\\\\\1")
+    }
+  results$predTop <- NA
+  for (i in unique(results$uniprot)) {
+    searchterm <- paste("^", quotemeta(i), "$", sep = "")
+    rowsR <- grep(searchterm, results$uniprot)
+    rowsP <- grep(searchterm, predTop$Identifier)
+    aR <- results[rowsR,]
+    aP <- predTop[rowsP,]
+    l <- nrow(aP)
+    if (l == 1){
+      results$predTop[rowsR] <- aP$Consensus[1]
+    } else {
+      results$predTop[rowsR] <- aP$Consensus[1] <- NA
+    }
+  
+  }
+
+## 3 without predictions  -- add manually
+  
+## linear model doesn't seem to work -- everything is bimodal so can't fit linear regression.
+```
+
+This chunk to make graphs of 14-3-3 binding site presence in various GO term groups
+```{r}
+library(ggplot2) 
+library(ggpubr)
+#this graph for LargeRibosome-------------------------------------------------------------------------------------
+plotLR <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "Large Ribosome, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% LargeRibosome == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% LRibpred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+
+#this graph for SmallRibosome -------------------------------------------------------------------------------------
+plotSR <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Small Ribosome, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% SmallRibosome == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% SRibpred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+#this graph for eIF3-------------------------------------------------------------------------------------
+ploteIF <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "eIF3, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% eIF3 == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% eIF3pred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+#this graph for spindle-------------------------------------------------------------------------------------
+plotSpn <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Spindle, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% Spindle == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% spinpred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+#this graph for Spliceosome-------------------------------------------------------------------------------------
+plotSpc <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Spliceosome, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% Spliceosome == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% Spliceosomepred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+#this graph for Ubiquitin ligase-------------------------------------------------------------------------------------
+plotUL <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "Ubiquitin Ligase, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% UbLig == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% ULpred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+#this graph for preribosome-------------------------------------------------------------------------------------
+plotpR <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "Preribosome, consensus 0.9")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% preribosome == TRUE), colour = "red")+
+            geom_point(data = subset(results, results$geneName %in% pRibpred$geneName == TRUE), 
+                       shape = 24, colour = "black", fill = "red", size = 2)
+
+pAll <- ggarrange(plotLR, plotSR, ploteIF, plotpR, plotSpc, plotSpn, plotUL, 
+          heights = c(3, 3, 3, 3, 3, 3, 3), 
+          widths = c(3, 2.2, 2.2, 3, 2.2, 2.2, 3),
+          labels = "auto",
+          ncol = 3, nrow = 3)
+
+# This set of graphs with Consensus = 1 ---------------------------------
+library(plotly)
+plotlyLR<-ggplotly(plotLR, tooltip = 'text')
+plotlySR<-ggplotly(plotSR, tooltip = 'text')
+plotlyeIF<-ggplotly(ploteIF, tooltip = 'text')
+plotlypR<-ggplotly(plotpR, tooltip = 'text')
+plotlySpc<-ggplotly(plotSpc, tooltip = 'text')
+plotlySpn<-ggplotly(plotSpn, tooltip = 'text')
+plotlyUL<-ggplotly(plotUL, tooltip = 'text')
+
+Sys.setenv("plotly_username"="C.Repton")
+Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+api_create(plotlyLR, filename = "R18_GOlargeRib_14-3-3")
+api_create(plotlySR, filename = "R18_GOsmallRib_14-3-3")
+api_create(plotlypR, filename = "R18_GOlpreRib_14-3-3")
+api_create(plotlyeIF, filename = "R18_GOeIF3_14-3-3")
+api_create(plotlySpc, filename = "R18_GOsplice_14-3-3")
+api_create(plotlySpn, filename = "R18_GOspindle_14-3-3")
+api_create(plotlyUL, filename = "R18_GOubLig_14-3-3")
+
+# This set of graphs with Consensus = 0.9 ---------------------------------
+## acheived by changing the list for assigning the ..pred dataframes, so make sure to do that if you want to rerun this code!
+plotlyLR9<-ggplotly(plotLR, tooltip = 'text')
+plotlySR9<-ggplotly(plotSR, tooltip = 'text')
+plotlyeIF9<-ggplotly(ploteIF, tooltip = 'text')
+plotlypR9<-ggplotly(plotpR, tooltip = 'text')
+plotlySpc9<-ggplotly(plotSpc, tooltip = 'text')
+plotlySpn9<-ggplotly(plotSpn, tooltip = 'text')
+plotlyUL9<-ggplotly(plotUL, tooltip = 'text')
+
+Sys.setenv("plotly_username"="C.Repton")
+Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+api_create(plotlyLR9, filename = "R18_GOlargeRib_14-3-3_0.9")
+api_create(plotlySR9, filename = "R18_GOsmallRib_14-3-3_0.9")
+api_create(plotlypR9, filename = "R18_GOlpreRib_14-3-3_0.9")
+api_create(plotlyeIF9, filename = "R18_GOeIF3_14-3-3_0.9")
+api_create(plotlySpc9, filename = "R18_GOsplice_14-3-3_0.9")
+api_create(plotlySpn9, filename = "R18_GOspindle_14-3-3_0.9")
+api_create(plotlyUL9, filename = "R18_GOubLig_14-3-3_0.9")
+
+# This set of graphs with Consensus = 0.5 ---------------------------------
+## acheived by changing the list for assigning the ..pred dataframes, so make sure to do that if you want to rerun this code!
+plotlyLR5<-ggplotly(plotLR, tooltip = 'text')
+plotlySR5<-ggplotly(plotSR, tooltip = 'text')
+plotlyeIF5<-ggplotly(ploteIF, tooltip = 'text')
+plotlypR5<-ggplotly(plotpR, tooltip = 'text')
+plotlySpc5<-ggplotly(plotSpc, tooltip = 'text')
+plotlySpn5<-ggplotly(plotSpn, tooltip = 'text')
+plotlyUL5<-ggplotly(plotUL, tooltip = 'text')
+
+Sys.setenv("plotly_username"="C.Repton")
+Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+api_create(plotlyLR9, filename = "R18_GOlargeRib_14-3-3_0.9")
+api_create(plotlySR9, filename = "R18_GOsmallRib_14-3-3_0.9")
+api_create(plotlypR9, filename = "R18_GOlpreRib_14-3-3_0.9")
+api_create(plotlyeIF9, filename = "R18_GOeIF3_14-3-3_0.9")
+api_create(plotlySpc9, filename = "R18_GOsplice_14-3-3_0.9")
+api_create(plotlySpn9, filename = "R18_GOspindle_14-3-3_0.9")
+api_create(plotlyUL9, filename = "R18_GOubLig_14-3-3_0.9")
+
+
+plot(results$predTop)
+```
+So 0.9 changes things compared to 1.0. What should consensus be set to? Can I assign the top consensus value to each protein in the results file and use a gradient of colours to mark them on the graph?
+```{r}
+## this didn't work before because big negative values were being selected! But WD3meth is already subsetted for those predictions relying on all 3 methods, and should all be positive values
+range(WD3meth$Consensus) # yep, lowest value is 0.55
+
+#assign top prediction to each protein. 
+library(data.table)
+WD3methTop <- as.data.table(WD3meth)[, .SD[which.max(abs(Consensus))], by=Identifier]
+  # add to results data.frame
+    #need quotemeta function
+    library(stringr)
+    quotemeta <- function(string) {
+     str_replace_all(string, "(\\W)", "\\\\\\1")
+    }
+  results$predTop <- NA
+  for (i in unique(results$uniprot)) {
+    searchterm <- paste("^", quotemeta(i), "$", sep = "")
+    rowsR <- grep(searchterm, results$uniprot)
+    rowsP <- grep(searchterm, WD3methTop$Identifier)
+    aR <- results[rowsR,]
+    aP <- WD3methTop[rowsP,]
+    l <- nrow(aP)
+    if (l == 1){
+      results$predTop[rowsR] <- aP$Consensus[1]
+    } else {
+      results$predTop[rowsR] <- aP$Consensus[1] <- NA
+    }
+  
+  }
+  
+plot(results$predTop) #yay!
+
+# scaling colours is hard. Let's bin the values manually in the results data.frame
+results$bin <- NULL
+for (i in unique(results$geneName)){
+  searchterm <- paste("^", quotemeta(i), "$", sep = "")
+  r <- grep(searchterm, results$geneName)
+  if (is.na(results$predTop[r]) == TRUE){
+    results$bin[r] = "N.S."
+  } else if (results$predTop[r] > 0.5 &results$predTop[r] < 0.75){
+    results$bin[r] = "0.5 - 0.75"
+  } else if (results$predTop[r] > 0.75 &results$predTop[r] < 1){
+    results$bin[r] = "0.75 - 1.0"
+  } else if (results$predTop[r] > 1 &results$predTop[r] < 1.25){
+    results$bin[r] = "1.0 - 1.25"
+  } else if (results$predTop[r] > 1.25 &results$predTop[r] < 1.5){
+    results$bin[r] = "1.25 - 1.5"
+  } else if (results$predTop[r] > 1.5){
+    results$bin[r] = "1.5 +"
+  }
+}
+
+results$bin <- as.factor(results$bin)
+results$bin <- factor(results$bin, levels = c("N.S.", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "1.5 +"))
+# right, let's see if we can coerce the graph
+
+plotAll <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "All proteins", colour = "Consensus")+
+            #geom_point(data = subset(results, results$logSAM > 23))+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = results, aes(colour = bin))+
+            scale_color_manual(values = c("grey", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               drop = FALSE)
+
+plotLR2 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Large Ribosome", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% LargeRibosome), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"),
+                               drop = FALSE)
+
+plotSR2 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Small Ribosome", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% SmallRibosome), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"),
+                               drop = FALSE)
+
+plotSpc2 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Spliceosome", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% Spliceosome), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"),
+                               drop = FALSE)
+
+plotSpn2 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Spindle", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% Spindle), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"),
+                               drop = FALSE)
+
+plotpR2 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Preribosome", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% preribosome), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"),
+                               drop = FALSE)
+            
+plotUL2 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "Ubiquitin Ligase", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% UbLig), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"),
+                               drop = FALSE)
+
+ploteIF32 <- ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            #scale_y_continuous(limits = c(0, 4), labels = NULL)+
+            labs(x = NULL, y = "p value", title = "eIF3", colour = "Consensus")+
+            geom_point(data = subset(results, results$uniprot %in% HC14.3.3WD_1 == TRUE), 
+                       shape = 17, colour = "grey")+
+            geom_point(data = subset(results, results$geneName %in% eIF3), aes(colour = bin))+
+            scale_color_manual(values = c("#000000", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"),
+                               labels = c("NS", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "> 1.5"), 
+                               drop = FALSE)
+
+pAll2 <- ggarrange(plotLR2, plotSR2, ploteIF32, plotpR2, plotSpc2, plotSpn2, plotUL2, 
+          heights = c(3, 3, 3, 3, 3, 3, 3),
+          labels = "auto",
+          ncol = 3, nrow = 3, common.legend = TRUE)
+
+plotlyLR2<-ggplotly(plotLR2, tooltip = 'text')
+plotlySR2<-ggplotly(plotSR2, tooltip = 'text')
+plotlyeIF2<-ggplotly(ploteIF32, tooltip = 'text')
+plotlypR2<-ggplotly(plotpR2, tooltip = 'text')
+plotlySpc2<-ggplotly(plotSpc2, tooltip = 'text')
+plotlySpn2<-ggplotly(plotSpn2, tooltip = 'text')
+plotlyUL2<-ggplotly(plotUL2, tooltip = 'text')
+plotlyAll2 <-ggplotly(plotAll, tooltip = 'text')
+
+Sys.setenv("plotly_username"="C.Repton")
+Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+api_create(plotlyLR2, filename = "R18_GOlargeRib_14-3-3_grad")
+api_create(plotlySR2, filename = "R18_GOsmallRib_14-3-3_grad")
+api_create(plotlypR2,  filename = "R18_GOlpreRib_14-3-3_grad")
+api_create(plotlyeIF2, filename = "R18_GOeIF3_14-3-3_grad")
+api_create(plotlySpc2, filename = "R18_GOsplice_14-3-3_grad")
+api_create(plotlySpn2, filename = "R18_GOspindle_14-3-3_grad")
+api_create(plotlyUL2, filename = "R18_GOubLig_14-3-3_grad")
+api_create(plotlyAll2, filename = "R18_GOall_14-3-3_grad")
+
+#plot logratio against predTop with bin colours
+
+mean.N.S <- mean(subset(results, results$bin == "N.S.")$logratio)
+mean.b1 <- mean(subset(results, results$bin == "0.5 - 0.75")$logratio)
+mean.b2 <- mean(subset(results, results$bin == "0.75 - 1.0")$logratio)
+mean.b3 <- mean(subset(results, results$bin == "1.0 - 1.25")$logratio)
+mean.b4 <- mean(subset(results, results$bin == "1.25 - 1.5")$logratio)
+mean.b5 <- mean(subset(results, results$bin == "1.5 +")$logratio)
+
+sd.N.S <- sd(subset(results, results$bin == "N.S.")$logratio)
+sd.b1 <- sd(subset(results, results$bin == "0.5 - 0.75")$logratio)
+sd.b2 <- sd(subset(results, results$bin == "0.75 - 1.0")$logratio)
+sd.b3 <- sd(subset(results, results$bin == "1.0 - 1.25")$logratio)
+sd.b4 <- sd(subset(results, results$bin == "1.25 - 1.5")$logratio)
+sd.b5 <- sd(subset(results, results$bin == "1.5 +")$logratio)
+
+y.N.S <- NA
+y.b1 <- mean(c(0.5, 0.75))
+y.b2 <- mean(c(0.75, 1))
+y.b3 <- mean(c(1, 1.25))
+y.b4 <- mean(c(1.25, 1.5))
+y.b5 <- mean(c(1.5, 1.75))
+
+bins <- data.frame(bins = c("N.S.", "0.5 - 0.75", "0.75 - 1.0", "1.0 - 1.25", "1.25 - 1.5", "1.5 +"),
+           mean = c(mean.N.S, mean.b1, mean.b2, mean.b3, mean.b4, mean.b5),
+           sd = c(sd.N.S, sd.b1, sd.b2, sd.b3, sd.b4, sd.b5), 
+           y = c(y.N.S, y.b1, y.b2, y.b3, y.b4, y.b5))
+
+plotDist <- ggplot(results, aes(bin, logratio, group = bin))+
+              geom_boxplot(outlier.shape = NA, lwd=0.8, colour = "black")+
+              geom_dotplot(binaxis='y', 
+                       stackdir='center', 
+                       dotsize = 0.65, 
+                       aes(fill= bin),
+                       stackratio = 0.8,
+                       binwidth = 0.08)+
+              scale_fill_manual(values = c("grey", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"), 
+                                       drop = FALSE, guide = FALSE) +
+              labs(x = "Highest Consensus 14-3-3 prediction (binned)", 
+                   y = "logratio", 
+                   title = "All proteins", 
+                   colour = "Consensus")
+
+
+plotlyDist <- ggplotly(plotDist, tooltip = 'text')
+api_create(plotlyDist, filename = "R18_topPred_logratio_grad")
+#ok that doesn't work. have to embed the graph in the email
+
+
+#plot distribution of bins
+DistBar <- ggplot(data = results, aes(x = bin))+
+  geom_bar(aes(fill = bin))+
+  scale_fill_manual(values = c("grey", "#F1F524", "#57E60F", "#3769F1", "#7032B2", "#FF004C"), 
+                               drop = FALSE, guide = FALSE)+
+  labs(x = "bin", y = "Count", title = "distribution of 14-3-3 best predictions")
+
+plotlyDistBar <- ggplotly(DistBar, tooltip = 'text')
+api_create(plotlyDistBar, filename = "R18_distribution14-3-3_bins_bar")
+
+```
+
+Hiro would like to see the frequency of proteins above various 14-3-3 consensus thresholds, separated by p-value bins (<0.01, 0.01-0.05, 0.05-0.1, 0.1-0.2, 0.2-0.5, 0.5-1, to start) and by logratio >0 vs <0.
+```{r}
+#first, separate by positive and negative logratio
+PosLogRat <- subset(results, results$logratio > 0)
+NegLogRat <- subset(results, results$logratio < 0)
+
+#make dataframe for positive and negative using subsetting and counting number of rows
+PosPvalbins <- data.frame(pvalbins = c("<0.01", "0.01-0.05", "0.05-0.1", "0.1-0.2", "0.2-0.5", "0.5-1"),
+                       Cons1 = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01 ## pval bins, consensus >1
+                                                       &PosLogRat$predTop >1)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05
+                                                       &PosLogRat$predTop >1)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1
+                                                       &PosLogRat$predTop >1)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2
+                                                       &PosLogRat$predTop >1)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5
+                                                       &PosLogRat$predTop >1)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1
+                                                       &PosLogRat$predTop >1))
+                                 ),
+                       Cons0.9 = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01 #pval bins, consensus>0.9
+                                                       &PosLogRat$predTop >0.9)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05
+                                                       &PosLogRat$predTop >0.9)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1
+                                                       &PosLogRat$predTop >0.9)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2
+                                                       &PosLogRat$predTop >0.9)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5
+                                                       &PosLogRat$predTop >0.9)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1
+                                                       &PosLogRat$predTop >0.9))
+                                 ),
+                       Cons0.8 = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01 #pval bins, consensus>0.8
+                                                       &PosLogRat$predTop >0.8)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05
+                                                       &PosLogRat$predTop >0.8)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1
+                                                       &PosLogRat$predTop >0.8)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2
+                                                       &PosLogRat$predTop >0.8)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5
+                                                       &PosLogRat$predTop >0.8)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1
+                                                       &PosLogRat$predTop >0.8))
+                                 ),
+                       Cons0.7 = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01 #pval bins, consensus>0.7
+                                                       &PosLogRat$predTop >0.7)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05
+                                                       &PosLogRat$predTop >0.7)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1
+                                                       &PosLogRat$predTop >0.7)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2
+                                                       &PosLogRat$predTop >0.7)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5
+                                                       &PosLogRat$predTop >0.7)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1
+                                                       &PosLogRat$predTop >0.7))
+                                 ),
+                       Cons0.6 = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01 #pval bins, consensus>0.6
+                                                       &PosLogRat$predTop >0.6)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05
+                                                       &PosLogRat$predTop >0.6)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1
+                                                       &PosLogRat$predTop >0.6)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2
+                                                       &PosLogRat$predTop >0.6)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5
+                                                       &PosLogRat$predTop >0.6)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1
+                                                       &PosLogRat$predTop >0.6))
+                                 ),
+                       Cons0.5 = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01 #pval bins, consensus>0.5
+                                                       &PosLogRat$predTop >0.5)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05
+                                                       &PosLogRat$predTop >0.5)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1
+                                                       &PosLogRat$predTop >0.5)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2
+                                                       &PosLogRat$predTop >0.5)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5
+                                                       &PosLogRat$predTop >0.5)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1
+                                                       &PosLogRat$predTop >0.5))
+                                 ),
+                       total = c(nrow(subset(PosLogRat, PosLogRat$pairedp.value < 0.01)), ## pval bins
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.01 
+                                                     &PosLogRat$pairedp.value < 0.05)), 
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.05
+                                                     &PosLogRat$pairedp.value < 0.1)), 
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.1
+                                                     &PosLogRat$pairedp.value < 0.2)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.2
+                                                     &PosLogRat$pairedp.value <0.5)),
+                                 nrow(subset(PosLogRat, PosLogRat$pairedp.value > 0.5
+                                                     &PosLogRat$pairedp.value < 1))
+                                 )
+)
+
+
+
+NegPvalbins <- data.frame(pvalbins = c("<0.01", "0.01-0.05", "0.05-0.1", "0.1-0.2", "0.2-0.5", "0.5-1"),
+                       Cons1 = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01 ## pvalbins, consensus >1
+                                                       &NegLogRat$predTop >1)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05
+                                                       &NegLogRat$predTop >1)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1
+                                                       &NegLogRat$predTop >1)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2
+                                                       &NegLogRat$predTop >1)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5
+                                                       &NegLogRat$predTop >1)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1
+                                                       &NegLogRat$predTop >1))
+                                 ),
+                       Cons0.9 = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01 #pvalbins, consensus>0.9
+                                                       &NegLogRat$predTop >0.9)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05
+                                                       &NegLogRat$predTop >0.9)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1
+                                                       &NegLogRat$predTop >0.9)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2
+                                                       &NegLogRat$predTop >0.9)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5
+                                                       &NegLogRat$predTop >0.9)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1
+                                                       &NegLogRat$predTop >0.9))
+                                 ),
+                       Cons0.8 = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01 #pvalbins, consensus>0.8
+                                                       &NegLogRat$predTop >0.8)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05
+                                                       &NegLogRat$predTop >0.8)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1
+                                                       &NegLogRat$predTop >0.8)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2
+                                                       &NegLogRat$predTop >0.8)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5
+                                                       &NegLogRat$predTop >0.8)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1
+                                                       &NegLogRat$predTop >0.8))
+                                 ),
+                       Cons0.7 = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01 #pvalbins, consensus>0.7
+                                                       &NegLogRat$predTop >0.7)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05
+                                                       &NegLogRat$predTop >0.7)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1
+                                                       &NegLogRat$predTop >0.7)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2
+                                                       &NegLogRat$predTop >0.7)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5
+                                                       &NegLogRat$predTop >0.7)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1
+                                                       &NegLogRat$predTop >0.7))
+                                 ),
+                       Cons0.6 = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01 #pvalbins, consensus>0.6
+                                                       &NegLogRat$predTop >0.6)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05
+                                                       &NegLogRat$predTop >0.6)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1
+                                                       &NegLogRat$predTop >0.6)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2
+                                                       &NegLogRat$predTop >0.6)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5
+                                                       &NegLogRat$predTop >0.6)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1
+                                                       &NegLogRat$predTop >0.6))
+                                 ),
+                       Cons0.5 = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01 #pvalbins, consensus>0.5
+                                                       &NegLogRat$predTop >0.5)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05
+                                                       &NegLogRat$predTop >0.5)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1
+                                                       &NegLogRat$predTop >0.5)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2
+                                                       &NegLogRat$predTop >0.5)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5
+                                                       &NegLogRat$predTop >0.5)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1
+                                                       &NegLogRat$predTop >0.5))
+                                 ),
+                       total = c(nrow(subset(NegLogRat, NegLogRat$pairedp.value < 0.01)), ## pval bins
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.01 
+                                                     &NegLogRat$pairedp.value < 0.05)), 
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.05
+                                                     &NegLogRat$pairedp.value < 0.1)), 
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.1
+                                                     &NegLogRat$pairedp.value < 0.2)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.2
+                                                     &NegLogRat$pairedp.value <0.5)),
+                                 nrow(subset(NegLogRat, NegLogRat$pairedp.value > 0.5
+                                                     &NegLogRat$pairedp.value < 1))
+                                 )
+)
+
+PosPvalBins2 <- melt(PosPvalbins)
+NegPvalBins2 <- melt(NegPvalbins)
+
+plot.pvals1 <- ggplot(data = PosPvalBins2, aes(x = pvalbins, y = value, fill = variable))+
+  theme(axis.text.x=element_text(angle = 45, vjust = 0.5), plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+  geom_bar(stat = 'identity')+
+  labs(x = "p value", y = "# of proteins", fill = "Consensus")+
+  scale_fill_discrete(labels = c("> 1", "> 0.9", "> 0.8", "> 0.7", "> 0.6", "> 0.5", "< 0.5"))
+
+plot.pvals2 <- ggplot(data = PosPvalBins2, aes(x = pvalbins, y = value, fill = variable))+
+  theme(axis.text.x=element_text(angle = 45, vjust = 0.5), plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+  geom_bar(stat = 'identity', position = "fill")+
+  labs(x = "p value", y = "percentage", fill = "Consensus")+
+  scale_y_continuous(labels = c("0", "25%", "50%", "75%", "100%"))+
+  scale_fill_discrete(labels = c("> 1", "> 0.9", "> 0.8", "> 0.7", "> 0.6", "> 0.5", "< 0.5"))
+
+plot.pvals3 <- ggplot(data = NegPvalBins2, aes(x = pvalbins, y = value, fill = variable))+
+  theme(axis.text.x=element_text(angle = 45, vjust = 0.5), plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+  geom_bar(stat = 'identity')+
+  labs(x = "p value", y = "# of proteins", fill = "Consensus")+
+  scale_fill_discrete(labels = c("> 1", "> 0.9", "> 0.8", "> 0.7", "> 0.6", "> 0.5", "< 0.5"))
+
+plot.pvals4 <- ggplot(data = NegPvalBins2, aes(x = pvalbins, y = value, fill = variable))+
+  theme(axis.text.x=element_text(angle = 45, vjust = 0.5), plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+  geom_bar(stat = 'identity', position = "fill")+
+  labs(x = "p value", y = "percentage", fill = "Consensus")+
+  scale_y_continuous(labels = c("0", "25%", "50%", "75%", "100%"))+
+  scale_fill_discrete(labels = c("> 1", "> 0.9", "> 0.8", "> 0.7", "> 0.6", "> 0.5", "< 0.5"))
+
+#library(ggpubr)
+ggarrange(plot.pvals1, plot.pvals2, plot.pvals3, plot.pvals4, 
+          labels = "auto",
+          common.legend = TRUE)
+
+```
+
+I want to align the 14-3-3 binding sites predicted for the proteins in the data set to see if the top right proteins have something special about their predicted binding sites, compared to the sites predicted for proteins that didn't change.
+Various filtering methods below. writeClipboard commands for copying the binding site sequences into WebLogo
+```{r}
+## using WD3meth and WD3methTop
+# get list of uniprots where p-value < 0.1 and logratio >0.15 or less than -0.15
+topRight1 <- subset(results, results$pairedp.value < 0.1 & results$logratio > 0.15)
+topLeft1 <- subset(results, results$pairedp.value < 0.1 & results$logratio < -0.15)
+everythingElse1 <- subset(results, !(results$geneName %in% topRight1$geneName))
+everythingElse1 <- subset(everythingElse1, !(everythingElse1$geneName %in% topLeft1$geneName))
+
+# use these lists to filter the 14-3-3 predicted site sequences (TL = top left, TR = top right, EE = everything else)
+# try changing logratio parameter + p-value
+TR1_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topRight1$uniprot)
+TR1_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topRight1$uniprot)
+TL1_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topLeft1$uniprot)
+TL1_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topLeft1$uniprot)
+EE1_allseqs <- subset(WD3meth, WD3meth$Identifier %in% everythingElse1$uniprot)
+EE1_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% everythingElse1$uniprot)
+
+#writeClipboard(as.character(TR1_allseqs$Peptide_..6.4.))
+#writeClipboard(as.character(TR1_bestseqs$Peptide_..6.4.))
+#writeClipboard(as.character(TL1_allseqs$Peptide_..6.4.))
+#writeClipboard(as.character(TL1_bestseqs$Peptide_..6.4.))
+#writeClipboard(as.character(EE1_allseqs$Peptide_..6.4.))
+#writeClipboard(as.character(EE1_bestseqs$Peptide_..6.4.))
+
+topRight2 <- subset(results, results$pairedp.value < 0.05 & results$logratio >0.15)
+topLeft2 <- subset(results, results$pairedp.value < 0.05 & results$logratio < -0.15)
+everythingElse2 <- subset(results, !(results$geneName %in% topRight2$geneName))
+everythingElse2 <- subset(everythingElse2, !(everythingElse2$geneName %in% topLeft2$geneName))
+
+TR2_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topRight2$uniprot)
+TR2_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topRight2$uniprot)
+TL2_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topLeft2$uniprot)
+TL2_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topLeft2$uniprot)
+EE2_allseqs <- subset(WD3meth, WD3meth$Identifier %in% everythingElse2$uniprot)
+EE2_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% everythingElse2$uniprot)
+# writeClipboard(as.character(TR2_allseqs$Peptide_..6.4.))
+# writeClipboard(as.character(TR2_bestseqs$Peptide_..6.4.))
+# writeClipboard(as.character(TL2_allseqs$Peptide_..6.4.))
+# writeClipboard(as.character(TL2_bestseqs$Peptide_..6.4.))
+# writeClipboard(as.character(EE2_allseqs$Peptide_..6.4.))
+# writeClipboard(as.character(EE2_bestseqs$Peptide_..6.4.))
+
+
+topRight3 <- subset(results, results$pairedp.value < 0.05 & results$logratio >0.2)
+TR3_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topRight3$uniprot)
+TR3_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topRight3$uniprot)
+#writeClipboard(as.character(TR3_allseqs$Peptide_..6.4.))
+#writeClipboard(as.character(TR3_bestseqs$Peptide_..6.4.))
+
+topRight4 <- subset(results, results$pairedp.value < 0.05 & results$logratio >0.5)
+TR4_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topRight4$uniprot)
+TR4_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topRight4$uniprot)
+#writeClipboard(as.character(TR4_allseqs$Peptide_..6.4.))
+#writeClipboard(as.character(TR4_bestseqs$Peptide_..6.4.))
+
+topRight5 <- subset(results, results$pairedp.value < 0.05 & results$logratio >0.8)
+TR5_allseqs <- subset(WD3meth, WD3meth$Identifier %in% topRight5$uniprot)
+TR5_bestseqs <- subset(WD3methTop, WD3methTop$Identifier %in% topRight5$uniprot)
+#writeClipboard(as.character(TR5_allseqs$Peptide_..6.4.))
+#writeClipboard(as.character(TR5_bestseqs$Peptide_..6.4.))
+
+#changing consensus cut-off; 
+#1 - 0.8 vs 0.5-0.8 p<0.1
+TR10.8 <- subset(TR1_allseqs, TR1_allseqs$Consensus > 0.8)
+TR10.5 <- subset(TR1_allseqs, TR1_allseqs$Consensus < 0.8)
+TR10.8best <- subset(TR1_bestseqs, TR1_bestseqs$Consensus > 0.8)
+TR10.5best <- subset(TR1_bestseqs, TR1_bestseqs$Consensus < 0.8)
+#writeClipboard(as.character(TR10.8$Peptide_..6.4.))
+#writeClipboard(as.character(TR10.5$Peptide_..6.4.))
+#writeClipboard(as.character(TR10.8best$Peptide_..6.4.))
+#writeClipboard(as.character(TR10.5best$Peptide_..6.4.))
+TL10.8 <- subset(TL1_allseqs, TL1_allseqs$Consensus > 0.8)
+TL10.5 <- subset(TL1_allseqs, TL1_allseqs$Consensus < 0.8)
+TL10.8best <- subset(TL1_bestseqs, TL1_bestseqs$Consensus > 0.8)
+TL10.5best <- subset(TL1_bestseqs, TL1_bestseqs$Consensus < 0.8)
+# writeClipboard(as.character(TL10.8$Peptide_..6.4.))
+# writeClipboard(as.character(TL10.5$Peptide_..6.4.))
+# writeClipboard(as.character(TL10.8best$Peptide_..6.4.))
+# writeClipboard(as.character(TL10.5best$Peptide_..6.4.))
+EE10.8 <- subset(EE1_allseqs, EE1_allseqs$Consensus > 0.8)
+EE10.5 <- subset(EE1_allseqs, EE1_allseqs$Consensus < 0.8)
+EE10.8best <- subset(EE1_bestseqs, EE1_bestseqs$Consensus > 0.8)
+EE10.5best <- subset(EE1_bestseqs, EE1_bestseqs$Consensus < 0.8)
+writeClipboard(as.character(EE10.8$Peptide_..6.4.))
+writeClipboard(as.character(EE10.5$Peptide_..6.4.))
+writeClipboard(as.character(EE10.8best$Peptide_..6.4.))
+writeClipboard(as.character(EE10.5best$Peptide_..6.4.))
+
+#2 - 0.8 vs 0.5-0.8 p<0.05
+TR20.8 <- subset(TR2_allseqs, TR2_allseqs$Consensus > 0.8)
+TR20.5 <- subset(TR2_allseqs, TR2_allseqs$Consensus < 0.8)
+TR20.8best <- subset(TR2_bestseqs, TR2_bestseqs$Consensus > 0.8)
+TR20.5best <- subset(TR2_bestseqs, TR2_bestseqs$Consensus < 0.8)
+# writeClipboard(as.character(TR20.8$Peptide_..6.4.))
+# writeClipboard(as.character(TR20.5$Peptide_..6.4.))
+# writeClipboard(as.character(TR20.8best$Peptide_..6.4.))
+writeClipboard(as.character(TR20.5best$Peptide_..6.4.))
+TL20.8 <- subset(TL2_allseqs, TL2_allseqs$Consensus > 0.8)
+TL20.5 <- subset(TL2_allseqs, TL2_allseqs$Consensus < 0.8)
+TL20.8best <- subset(TL2_bestseqs, TL2_bestseqs$Consensus > 0.8)
+TL20.5best <- subset(TL2_bestseqs, TL2_bestseqs$Consensus < 0.8)
+# writeClipboard(as.character(TL20.8$Peptide_..6.4.))
+# writeClipboard(as.character(TL20.5$Peptide_..6.4.))
+# writeClipboard(as.character(TL20.8best$Peptide_..6.4.))
+# writeClipboard(as.character(TL20.5best$Peptide_..6.4.))
+EE20.8 <- subset(EE2_allseqs, EE2_allseqs$Consensus > 0.8)
+EE20.5 <- subset(EE2_allseqs, EE2_allseqs$Consensus < 0.8)
+EE20.8best <- subset(EE2_bestseqs, EE2_bestseqs$Consensus > 0.8)
+EE20.5best <- subset(EE2_bestseqs, EE2_bestseqs$Consensus < 0.8)
+writeClipboard(as.character(EE20.8$Peptide_..6.4.))
+writeClipboard(as.character(EE20.5$Peptide_..6.4.))
+writeClipboard(as.character(EE20.8best$Peptide_..6.4.))
+writeClipboard(as.character(EE20.5best$Peptide_..6.4.))
+
+#3 - 1.0 vs 0.5 - 1, p<0.1
+TR11.0 <- subset(TR1_allseqs, TR1_allseqs$Consensus > 1.0)
+TR10.5_1 <- subset(TR1_allseqs, TR1_allseqs$Consensus < 1.0)
+TR11.0best <- subset(TR1_bestseqs, TR1_bestseqs$Consensus > 1.0)
+TR10.5_1best <- subset(TR1_bestseqs, TR1_bestseqs$Consensus < 1.0)
+# writeClipboard(as.character(TR11.0$Peptide_..6.4.))
+# writeClipboard(as.character(TR10.5_1$Peptide_..6.4.))
+# writeClipboard(as.character(TR11.0best$Peptide_..6.4.))
+# writeClipboard(as.character(TR10.5_1best$Peptide_..6.4.))
+TL11.0 <- subset(TL1_allseqs, TL1_allseqs$Consensus > 1.0)
+TL10.5_1 <- subset(TL1_allseqs, TL1_allseqs$Consensus < 1.0)
+TL11.0best <- subset(TL1_bestseqs, TL1_bestseqs$Consensus > 1.0)
+TL10.5_1best <- subset(TL1_bestseqs, TL1_bestseqs$Consensus < 1.0)
+# writeClipboard(as.character(TL11.0$Peptide_..6.4.))
+# writeClipboard(as.character(TL10.5_1$Peptide_..6.4.))
+# writeClipboard(as.character(TL11.0best$Peptide_..6.4.))
+# writeClipboard(as.character(TL10.5_1best$Peptide_..6.4.))
+EE11.0 <- subset(EE1_allseqs, EE1_allseqs$Consensus > 1.0)
+EE10.5_1 <- subset(EE1_allseqs, EE1_allseqs$Consensus < 1.0)
+EE11.0best <- subset(EE1_bestseqs, EE1_bestseqs$Consensus > 1.0)
+EE10.5_1best <- subset(EE1_bestseqs, EE1_bestseqs$Consensus < 1.0)
+# writeClipboard(as.character(EE11.0$Peptide_..6.4.))
+# writeClipboard(as.character(EE10.5_1best$Peptide_..6.4.))
+# writeClipboard(as.character(EE11.0best$Peptide_..6.4.))
+# writeClipboard(as.character(EE10.5_1best$Peptide_..6.4.))
+
+#4 - 1.0 vs 0.5 - 1, p <0.05
+TR21.0 <- subset(TR2_allseqs, TR2_allseqs$Consensus > 1.0)
+TR20.5_1 <- subset(TR2_allseqs, TR2_allseqs$Consensus < 1.0)
+TR21.0best <- subset(TR2_bestseqs, TR2_bestseqs$Consensus > 1.0)
+TR20.5_1best <- subset(TR2_bestseqs, TR2_bestseqs$Consensus < 1.0)
+# writeClipboard(as.character(TR21.0$Peptide_..6.4.))
+# writeClipboard(as.character(TR20.5_1$Peptide_..6.4.))
+# writeClipboard(as.character(TR21.0best$Peptide_..6.4.))
+# writeClipboard(as.character(TR20.5_1best$Peptide_..6.4.))
+TL21.0 <- subset(TL2_allseqs, TL2_allseqs$Consensus > 1.0)
+TL20.5_1 <- subset(TL2_allseqs, TL2_allseqs$Consensus < 1.0)
+TL21.0best <- subset(TL2_bestseqs, TL2_bestseqs$Consensus > 1.0)
+TL20.5_1best <- subset(TL2_bestseqs, TL2_bestseqs$Consensus < 1.0)
+# writeClipboard(as.character(TL21.0$Peptide_..6.4.))
+# writeClipboard(as.character(TL20.5_1$Peptide_..6.4.))
+# writeClipboard(as.character(TL21.0best$Peptide_..6.4.))
+# writeClipboard(as.character(TL20.5_1best$Peptide_..6.4.))
+EE21.0 <- subset(EE2_allseqs, EE2_allseqs$Consensus > 1.0)
+EE20.5_1 <- subset(EE2_allseqs, EE2_allseqs$Consensus < 1.0)
+EE21.0best <- subset(EE2_bestseqs, EE2_bestseqs$Consensus > 1.0)
+EE20.5_1best <- subset(EE2_bestseqs, EE2_bestseqs$Consensus < 1.0)
+writeClipboard(as.character(EE21.0$Peptide_..6.4.))
+writeClipboard(as.character(EE20.5_1best$Peptide_..6.4.))
+writeClipboard(as.character(EE21.0best$Peptide_..6.4.))
+writeClipboard(as.character(EE20.5_1best$Peptide_..6.4.))
+
+
+## filtering for pSerine vs pThreonine: definitely produces different patterns
+serines <- grep("^......s....$", WD3methTop$Peptide_..6.4.) #n=789
+threonines <- grep("^......t....$", WD3methTop$Peptide_..6.4.) #n=587
+
+TR5_allSerines <- grep("^......s....$", TR5_allseqs$Peptide_..6.4.)
+TR5_allThreonines <- grep("^......t....$", TR5_allseqs$Peptide_..6.4.)
+# writeClipboard(as.character(TR5_allseqs[TR5_allSerines, 4]))
+# writeClipboard(as.character(TR5_allseqs[TR5_allThreonines, 4]))
+
+TR5_bestSerines <- grep("^......s....$", TR5_bestseqs$Peptide_..6.4.)
+TR5_bestThreonines <- grep("^......t....$", TR5_bestseqs$Peptide_..6.4.)
+# writeClipboard(as.character(TR5_bestseqs[TR5_bestSerines]$Peptide_..6.4.))
+# writeClipboard(as.character(TR5_bestseqs[TR5_bestThreonines]$Peptide_..6.4.))
+
+# all predicted seqs; serines only; top right = TR (>0.15, p<0.1), top left = TL (<-0.15, p<0.1), everything else = EE
+# 0.8 = Consensus >0.8; 0.5 = Consensus 0.5-0.8
+TR10.8S <- grep("^......s....$", TR10.8$Peptide_..6.4.)
+TR10.5S <- grep("^......s....$", TR10.5$Peptide_..6.4.)
+TR1S <- grep("^......s....$", TR1_allseqs$Peptide_..6.4.)
+TL10.8S <- grep("^......s....$", TL10.8$Peptide_..6.4.)
+TL10.5S <- grep("^......s....$", TL10.5$Peptide_..6.4.)
+TL1S <- grep("^......s....$", TL1_allseqs$Peptide_..6.4.)
+EE10.8S <- grep("^......s....$", EE10.8$Peptide_..6.4.)
+EE10.5S <- grep("^......s....$", EE10.5$Peptide_..6.4.)
+EE1S <- grep("^......s....$", EE1_allseqs$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR10.8$Peptide_..6.4.[TR10.8S]))
+# writeClipboard(as.character(TR10.5$Peptide_..6.4.[TR10.5S]))
+# writeClipboard(as.character(TR1_allseqs$Peptide_..6.4.[TR1S]))
+# writeClipboard(as.character(TL10.8$Peptide_..6.4.[TL10.8S]))
+# writeClipboard(as.character(TL10.5$Peptide_..6.4.[TL10.5S]))
+# writeClipboard(as.character(TL1_allseqs$Peptide_..6.4.[TL1S]))
+# writeClipboard(as.character(EE10.8$Peptide_..6.4.[EE10.8S]))
+# writeClipboard(as.character(EE10.5$Peptide_..6.4.[EE10.5S]))
+# writeClipboard(as.character(EE1_allseqs$Peptide_..6.4.[EE1S]))
+
+
+# best predicted sequence per protein, serines only; top right = TR (>0.15, p<0.1), top left = TL (<-0.15, p<0.1), everything else = EE
+# 0.8 = Consensus >0.8; 0.5 = Consensus 0.5-0.8
+
+TR10.8bestS <- grep("^......s....$", TR10.8best$Peptide_..6.4.)
+TR10.5bestS <- grep("^......s....$", TR10.5best$Peptide_..6.4.)
+TRbestS <- grep("^......s....$", TR1_bestseqs$Peptide_..6.4.)
+TL10.8bestS <- grep("^......s....$", TL10.8best$Peptide_..6.4.)
+TL10.5bestS <- grep("^......s....$", TL10.5best$Peptide_..6.4.)
+TLbestS <- grep("^......s....$", TL1_bestseqs$Peptide_..6.4.)
+EE10.8bestS <- grep("^......s....$", EE10.8best$Peptide_..6.4.)
+EE10.5bestS <- grep("^......s....$", EE10.5best$Peptide_..6.4.)
+EEbestS <- grep("^......s....$", EE1_bestseqs$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR10.8best$Peptide_..6.4.[TR10.8bestS]))
+# writeClipboard(as.character(TR10.5best$Peptide_..6.4.[TR10.5bestS]))
+# writeClipboard(as.character(TR1_bestseqs$Peptide_..6.4.[TRbestS]))
+# writeClipboard(as.character(TL10.8best$Peptide_..6.4.[TL10.8bestS]))
+# writeClipboard(as.character(TL10.5best$Peptide_..6.4.[TL10.5bestS])) #small sample n=7
+# writeClipboard(as.character(TL1_bestseqs$Peptide_..6.4.[TLbestS]))
+# writeClipboard(as.character(EE10.8best$Peptide_..6.4.[EE10.8bestS]))
+# writeClipboard(as.character(EE10.5best$Peptide_..6.4.[EE10.5bestS]))
+# writeClipboard(as.character(EE1_bestseqs$Peptide_..6.4.[EEbestS]))
+
+
+# all predicted seqs; serines only; top right = TR (>0.15, p<0.05), top left = TL (<-0.15, p<0.05), everything else = EE
+# 0.8 = Consensus >0.8; 0.5 = Consensus 0.5-0.8
+TR20.8S <- grep("^......s....$", TR20.8$Peptide_..6.4.)
+TR20.5S <- grep("^......s....$", TR20.5$Peptide_..6.4.)
+TR2S <- grep("^......s....$", TR2_allseqs$Peptide_..6.4.)
+TL20.8S <- grep("^......s....$", TL20.8$Peptide_..6.4.)
+TL20.5S <- grep("^......s....$", TL20.5$Peptide_..6.4.)
+TL2S <- grep("^......s....$", TL2_allseqs$Peptide_..6.4.)
+EE20.8S <- grep("^......s....$", EE20.8$Peptide_..6.4.)
+EE20.5S <- grep("^......s....$", EE20.5$Peptide_..6.4.)
+EE2S <- grep("^......s....$", EE2_allseqs$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR20.8$Peptide_..6.4.[TR20.8S]))
+# writeClipboard(as.character(TR20.5$Peptide_..6.4.[TR20.5S]))
+# writeClipboard(as.character(TR2_allseqs$Peptide_..6.4.[TR2S]))
+# writeClipboard(as.character(TL20.8$Peptide_..6.4.[TL20.8S]))
+# writeClipboard(as.character(TL20.5$Peptide_..6.4.[TL20.5S])) 
+# writeClipboard(as.character(TL2_allseqs$Peptide_..6.4.[TL2S]))
+# writeClipboard(as.character(EE20.8$Peptide_..6.4.[EE20.8S]))
+# writeClipboard(as.character(EE20.5$Peptide_..6.4.[EE20.5S]))
+# writeClipboard(as.character(EE2_allseqs$Peptide_..6.4.[EE2S]))
+
+# best predicted seqs per protein; serines only; top right = TR (>0.15, p<0.05), top left = TL (<-0.15, p<0.05), everything else = EE
+# 0.8 = Consensus >0.8; 0.5 = Consensus 0.5-0.8
+
+TR20.8bestS <- grep("^......s....$", TR20.8best$Peptide_..6.4.)
+TR20.5bestS <- grep("^......s....$", TR20.5best$Peptide_..6.4.)
+TR2bestS <- grep("^......s....$", TR2_bestseqs$Peptide_..6.4.)
+TL20.8bestS <- grep("^......s....$", TL20.8best$Peptide_..6.4.)
+TL20.5bestS <- grep("^......s....$", TL20.5best$Peptide_..6.4.)
+TL2bestS <- grep("^......s....$", TL2_bestseqs$Peptide_..6.4.)
+EE20.8bestS <- grep("^......s....$", EE20.8best$Peptide_..6.4.)
+EE20.5bestS <- grep("^......s....$", EE20.5best$Peptide_..6.4.)
+EE2bestS <- grep("^......s....$", EE2_bestseqs$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR20.8best$Peptide_..6.4.[TR20.8bestS]))
+# writeClipboard(as.character(TR20.5best$Peptide_..6.4.[TR20.5bestS]))
+# writeClipboard(as.character(TR2_bestseqs$Peptide_..6.4.[TR2bestS]))
+# writeClipboard(as.character(TL20.8best$Peptide_..6.4.[TL20.8bestS]))
+# writeClipboard(as.character(TL20.5best$Peptide_..6.4.[TL20.5bestS]))
+# writeClipboard(as.character(TL2_bestseqs$Peptide_..6.4.[TL2bestS]))
+# writeClipboard(as.character(EE20.8best$Peptide_..6.4.[EE20.8bestS]))
+# writeClipboard(as.character(EE20.5best$Peptide_..6.4.[EE20.5bestS]))
+# writeClipboard(as.character(EE2_bestseqs$Peptide_..6.4.[EE2bestS]))
+
+
+# all predicted seqs; serines only; top right = TR (>0.15, p<0.1), top left = TL (<-0.15, p<0.1), everything else = EE
+# 1.0 = Consensus >1.0; 0.5_1 = Consensus 0.5-1.0
+TR11.0S <- grep("^......s....$", TR11.0$Peptide_..6.4.)
+TR10.5_1S <- grep("^......s....$", TR10.5_1$Peptide_..6.4.)
+TL11.0S <- grep("^......s....$", TL11.0$Peptide_..6.4.)
+TL10.5_1S <- grep("^......s....$", TL10.5_1$Peptide_..6.4.)
+EE11.0S <- grep("^......s....$", EE11.0$Peptide_..6.4.)
+EE10.5_1S <- grep("^......s....$", EE10.5_1$Peptide_..6.4.)
+
+writeClipboard(as.character(TR11.0$Peptide_..6.4.[TR11.0S]))
+# writeClipboard(as.character(TR10.5_1$Peptide_..6.4.[TR10.5_1S]))
+# writeClipboard(as.character(TL11.0$Peptide_..6.4.[TL11.0S]))
+# writeClipboard(as.character(TL10.5_1$Peptide_..6.4.[TL10.5_1S]))
+# writeClipboard(as.character(EE11.0$Peptide_..6.4.[EE11.0S]))
+# writeClipboard(as.character(EE10.5_1$Peptide_..6.4.[EE10.5_1S]))
+
+
+# all predicted seqs; serines only; top right = TR (>0.15, p<0.05), top left = TL (<-0.15, p<0.05), everything else = EE
+# 1.0 = Consensus >1.0; 0.5_1 = Consensus 0.5-1.0
+
+TR21.0S <- grep("^......s....$", TR21.0$Peptide_..6.4.)
+TR20.5_1S <- grep("^......s....$", TR20.5_1$Peptide_..6.4.)
+TL21.0S <- grep("^......s....$", TL21.0$Peptide_..6.4.)
+TL20.5_1S <- grep("^......s....$", TL20.5_1$Peptide_..6.4.)
+EE21.0S <- grep("^......s....$", EE21.0$Peptide_..6.4.)
+EE20.5_1S <- grep("^......s....$", EE20.5_1$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR21.0$Peptide_..6.4.[TR21.0S]))
+# writeClipboard(as.character(TR20.5_1$Peptide_..6.4.[TR20.5_1S]))
+# writeClipboard(as.character(TL21.0$Peptide_..6.4.[TL21.0S]))
+# writeClipboard(as.character(TL20.5_1$Peptide_..6.4.[TL20.5_1S]))
+# writeClipboard(as.character(EE21.0$Peptide_..6.4.[EE21.0S]))
+# writeClipboard(as.character(EE20.5_1$Peptide_..6.4.[EE20.5_1S]))
+
+
+# best predicted seqs per protein; serines only; top right = TR (>0.15, p<0.1), top left = TL (<-0.15, p<0.1), everything else = EE
+# 1.0 = Consensus >1.0; 0.5_1 = Consensus 0.5-1.0
+TR11.0bestS <- grep("^......s....$", TR11.0best$Peptide_..6.4.)
+TR10.5_1bestS <- grep("^......s....$", TR10.5_1best$Peptide_..6.4.)
+TL11.0bestS <- grep("^......s....$", TL11.0best$Peptide_..6.4.)
+TL10.5_1bestS <- grep("^......s....$", TL10.5_1best$Peptide_..6.4.)
+EE11.0bestS <- grep("^......s....$", EE11.0best$Peptide_..6.4.)
+EE10.5_1bestS <- grep("^......s....$", EE10.5_1best$Peptide_..6.4.)
+
+writeClipboard(as.character(TR11.0best$Peptide_..6.4.[TR11.0bestS]))
+writeClipboard(as.character(TR10.5_1best$Peptide_..6.4.[TR10.5_1bestS]))
+writeClipboard(as.character(TL11.0best$Peptide_..6.4.[TL11.0bestS]))
+writeClipboard(as.character(TL10.5_1best$Peptide_..6.4.[TL10.5_1bestS]))
+writeClipboard(as.character(EE11.0best$Peptide_..6.4.[EE11.0bestS]))
+writeClipboard(as.character(EE10.5_1best$Peptide_..6.4.[EE10.5_1bestS]))
+
+# best predicted seqs per protein; serines only; top right = TR (>0.15, p<0.05), top left = TL (<-0.15, p<0.05), everything else = EE
+# 1.0 = Consensus >1.0; 0.5_1 = Consensus 0.5-1.0
+
+TR21.0bestS <- grep("^......s....$", TR21.0best$Peptide_..6.4.)
+TR20.5_1bestS <- grep("^......s....$", TR20.5_1best$Peptide_..6.4.)
+TL21.0bestS <- grep("^......s....$", TL21.0best$Peptide_..6.4.)
+TL20.5_1bestS <- grep("^......s....$", TL20.5_1best$Peptide_..6.4.)
+EE21.0bestS <- grep("^......s....$", EE21.0best$Peptide_..6.4.)
+EE20.5_1bestS <- grep("^......s....$", EE20.5_1best$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR21.0best$Peptide_..6.4.[TR21.0bestS]))
+# writeClipboard(as.character(TR20.5_1best$Peptide_..6.4.[TR20.5_1bestS]))
+# writeClipboard(as.character(TL21.0best$Peptide_..6.4.[TL21.0bestS]))
+# writeClipboard(as.character(TL20.5_1best$Peptide_..6.4.[TL20.5_1bestS]))
+# writeClipboard(as.character(EE21.0best$Peptide_..6.4.[EE21.0bestS]))
+# writeClipboard(as.character(EE20.5_1best$Peptide_..6.4.[EE20.5_1bestS]))
+
+# try logratio  > 0.5, < -0.5, p <0.1, consensus 1.0 vs 0.5
+TR3_seqs <- subset(results, results$logratio > 0.5 & results$pairedp.value < 0.1)
+TL3_seqs <- subset(results, results$logratio < -0.5 & results$pairedp.value < 0.1)
+EE3_seqs <- subset(results, !(results$geneName %in% TR3_seqs$geneName))
+EE3_seqs <- subset(EE3_seqs, !(EE3_seqs$geneName %in% TL3_seqs$geneName))
+
+TR3 <- subset(WD3meth, WD3meth$Identifier %in% TR3_seqs$uniprot)
+TR31.0 <- subset(TR3, TR3$Consensus > 1.0)
+TR30.5 <- subset(TR3, TR3$Consensus < 0.5)
+TL3 <- subset(WD3meth, WD3meth$Identifier %in% TL3_seqs$uniprot)
+TL31.0 <- subset(TL3, TL3$Consensus > 1.0)
+TL30.5 <- subset(TL3, TL3$Consensus < 0.5)
+EE3 <- subset(WD3meth, WD3meth$Identifier %in% EE3_seqs$uniprot)
+EE31.0 <- subset(EE3, EE3$Consensus < 1.0)
+EE30.5 <- subset(EE3, EE3$Consensus > 0.5)
+
+# writeClipboard(as.character(TR31.0$Peptide_..6.4.))
+# writeClipboard(as.character(TL31.0$Peptide_..6.4.))
+# writeClipboard(as.character(EE31.0$Peptide_..6.4.))
+# writeClipboard(as.character(EE30.5$Peptide_..6.4.))
+
+TR31.0S <- grep("^......s....$", TR31.0$Peptide_..6.4.)
+TL31.0S <- grep("^......s....$", TL31.0$Peptide_..6.4.)
+EE31.0S <- grep("^......s....$", EE31.0$Peptide_..6.4.)
+EE30.5S <- grep("^......s....$", EE30.5$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR31.0$Peptide_..6.4.[TR31.0S]))
+# writeClipboard(as.character(TL31.0$Peptide_..6.4.[TL31.0S]))
+# writeClipboard(as.character(EE31.0$Peptide_..6.4.[EE31.0S]))
+# writeClipboard(as.character(EE30.5$Peptide_..6.4.[EE30.5S]))
+
+TR31.0T <- grep("^......t....$", TR31.0$Peptide_..6.4.)
+TL31.0T <- grep("^......t....$", TL31.0$Peptide_..6.4.)
+EE31.0T <- grep("^......t....$", EE31.0$Peptide_..6.4.)
+EE30.5T <- grep("^......t....$", EE30.5$Peptide_..6.4.)
+
+# writeClipboard(as.character(TR31.0$Peptide_..6.4.[TR31.0T]))
+# writeClipboard(as.character(TL31.0$Peptide_..6.4.[TL31.0T]))
+# writeClipboard(as.character(EE31.0$Peptide_..6.4.[EE31.0T]))
+# writeClipboard(as.character(EE30.5$Peptide_..6.4.[EE30.5T]))
+
+
+```
+Let's plot various sites on the graph
+
+```{r}
+library(ggplot2)
+ggplot(data = results, aes(x = logratio, y = -log10(pairedp.value), text=geneName))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "")+
+            geom_point(data = subset(results, results$uniprot %in% WD3meth[grep("^(A|C|D|E|F|G|H|I|K|L|M|N|P|Q|R|S|T|U|V|W|Y)(A|C|D|F|G|H|I|K|L|M|Q|P|T|U|V|W|Y)R.S.s(A|C|D|F|G|H|I|L|M|N|Q|R|S|T|U|V|W|Y)(A|C|D|E|F|G|H|I|K|L|M|N|Q|R|S|T|U|V|W|Y)(A|C|D|E|F|G|H|I|K|L|M|N|Q|R|S|T|U|V|W|Y)(C|D|E|F|G|H|I|K|L|M|N|P|Q|R|S|U|V|W|Y)$", WD3meth$Peptide_..6.4.),2] == TRUE), 
+                       shape = 17, colour = "red")
+
+```
+
+Can we try to strip the binding sites and compare them to the logratio / p-value in R, instead of by weblogo?
+```{r}
+
+corr1 <- WD3meth
+results1 <- results[is.na(results$pairedp.value) == FALSE,]
+library(stringr)
+quotemeta <- function(string) {
+  str_replace_all(string, "(\\W)", "\\\\\\1")
+}
+
+
+for (i in unique(results1$uniprot)){
+  searchterm = paste("^", quotemeta(i), "$", sep = "")
+  corr1[grep(searchterm, corr1$Identifier), 9]<- results1[grep(searchterm, results1$uniprot), 9]
+  corr1[grep(searchterm, corr1$Identifier), 10] <- results1[grep(searchterm, results1$uniprot), 22]
+  corr1[grep(searchterm, corr1$Identifier), 11] <- results1[grep(searchterm, results1$uniprot), 2]
+}
+
+names(corr1)[c(9, 10, 11)] <- c("p.value", "logratio", "geneName")
+
+#split the peptide sequence up to be 1 residue per column
+corr1$p1 <- as.factor(gsub("..........$", corr1$Peptide_..6.4., replacement = ""))
+corr1$p2 <- as.character(gsub("^.", corr1$Peptide_..6.4., replacement = ""))
+corr1$p2 <- as.factor(gsub(".........$", corr1$p2, replacement = ""))
+corr1$p3 <- as.character(gsub("^..", corr1$Peptide_..6.4., replacement = ""))
+corr1$p3 <- as.factor(gsub("........$", corr1$p3, replacement = ""))
+corr1$p4 <- as.character(gsub("^...", corr1$Peptide_..6.4., replacement = ""))
+corr1$p4 <- as.factor(gsub(".......$", corr1$p4, replacement = ""))
+corr1$p5 <- as.character(gsub("^....", corr1$Peptide_..6.4., replacement = ""))
+corr1$p5 <- as.factor(gsub("......$", corr1$p5, replacement = ""))
+corr1$p6 <- as.character(gsub("^.....", corr1$Peptide_..6.4., replacement = ""))
+corr1$p6 <- as.factor(gsub(".....$", corr1$p6, replacement = ""))
+corr1$p7 <- as.character(gsub("^......", corr1$Peptide_..6.4., replacement = ""))
+corr1$p7 <- as.factor(gsub("....$", corr1$p7, replacement = ""))
+corr1$p8 <- as.character(gsub("^.......", corr1$Peptide_..6.4., replacement = ""))
+corr1$p8 <- as.factor(gsub("...$", corr1$p8, replacement = ""))
+corr1$p9 <- as.character(gsub("^........", corr1$Peptide_..6.4., replacement = ""))
+corr1$p9 <- as.factor(gsub("..$", corr1$p9, replacement = ""))
+corr1$p10 <- as.character(gsub("^.........", corr1$Peptide_..6.4., replacement = ""))
+corr1$p10 <- as.factor(gsub(".$", corr1$p10, replacement = ""))
+corr1$p11 <- as.factor(gsub("^..........", corr1$Peptide_..6.4., replacement = ""))
+
+corr1pos<- subset(corr1, corr1$logratio > 0)
+corr1neg<- subset(corr1, corr1$logratio < 0)
+
+#positive correlations?
+summary(lm(corr1pos$logratio ~ corr1pos$p1)) #not I
+summary(lm(corr1pos$logratio ~ corr1pos$p2)) #H
+summary(lm(corr1pos$logratio ~ corr1pos$p3)) #K, S
+summary(lm(corr1pos$logratio ~ corr1pos$p4)) 
+summary(lm(corr1pos$logratio ~ corr1pos$p5)) #R, S (maybe: I, F)
+summary(lm(corr1pos$logratio ~ corr1pos$p6)) #K, R
+summary(lm(corr1pos$logratio ~ corr1pos$p7)) 
+summary(lm(corr1pos$logratio ~ corr1pos$p8))
+summary(lm(corr1pos$logratio ~ corr1pos$p9))
+summary(lm(corr1pos$logratio ~ corr1pos$p10)) #C, (maybe: I, M, W)
+summary(lm(corr1pos$logratio ~ corr1pos$p11))
+
+summary(lm(corr1pos$p.value ~ corr1pos$p1)) #(maybe: I, N)
+summary(lm(corr1pos$p.value ~ corr1pos$p2)) #Y (maybe: C, V)
+summary(lm(corr1pos$p.value ~ corr1pos$p3)) #Q (maybe: D)
+summary(lm(corr1pos$p.value ~ corr1pos$p4))
+summary(lm(corr1pos$p.value ~ corr1pos$p5)) #S(maybe D)
+summary(lm(corr1pos$p.value ~ corr1pos$p6)) #not C, D, G, I, K, L, M, N, P, Q, R, S, T, V, Y
+summary(lm(corr1pos$p.value ~ corr1pos$p7)) 
+summary(lm(corr1pos$p.value ~ corr1pos$p8)) 
+summary(lm(corr1pos$p.value ~ corr1pos$p9)) 
+summary(lm(corr1pos$p.value ~ corr1pos$p10)) #C, F, G, I, L, N, V, W (maybe: A, E, M, S, Y)
+summary(lm(corr1pos$p.value ~ corr1pos$p11)) #C, E, I, N, R, T, V (maybe: A, D, K, L, P, Q)
+
+#negative correlations?
+summary(lm(corr1neg$logratio ~ corr1neg$p1)) #(maybe: M)
+summary(lm(corr1neg$logratio ~ corr1neg$p2)) 
+summary(lm(corr1neg$logratio ~ corr1neg$p3)) #(maybe: Y)
+summary(lm(corr1neg$logratio ~ corr1neg$p4)) #(maybe: F)
+summary(lm(corr1neg$logratio ~ corr1neg$p5)) #not P, V, W
+summary(lm(corr1neg$logratio ~ corr1neg$p6)) #I, K (maybe: G)
+summary(lm(corr1neg$logratio ~ corr1neg$p7)) 
+summary(lm(corr1neg$logratio ~ corr1neg$p8))
+summary(lm(corr1neg$logratio ~ corr1neg$p9))
+summary(lm(corr1neg$logratio ~ corr1neg$p10)) # S, (maybe: C, W)
+summary(lm(corr1neg$logratio ~ corr1neg$p11)) # M, R
+
+summary(lm(corr1neg$p.value ~ corr1neg$p1)) 
+summary(lm(corr1neg$p.value ~ corr1neg$p2))
+summary(lm(corr1neg$p.value ~ corr1neg$p3)) 
+summary(lm(corr1neg$p.value ~ corr1neg$p4))
+summary(lm(corr1neg$p.value ~ corr1neg$p5)) #W
+summary(lm(corr1neg$p.value ~ corr1neg$p6)) #Q
+summary(lm(corr1neg$p.value ~ corr1neg$p7)) 
+summary(lm(corr1neg$p.value ~ corr1neg$p8)) 
+summary(lm(corr1neg$p.value ~ corr1neg$p9)) 
+summary(lm(corr1neg$p.value ~ corr1neg$p10)) #W (maybe: H, S)
+summary(lm(corr1neg$p.value ~ corr1neg$p11)) #(maybe: M)
+
+corr1S <- subset(corr1, corr1$p7 == "s")
+
+library(ggplot2)
+ggplot(data = corr1S, aes(x = logratio, y = -log10(p.value), colour = p11))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point() +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "")+
+            scale_colour_manual(limits = c("-", "A", "C", "D", "E", "F", "G", "H", "I", "K", 
+                                           "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "X", "Y"),
+                                  values = c("grey", "black", "green", "red", "red", "black", 
+                                             "green", "blue", "black", "blue", "black", "black", "green", 
+                                             "black", "green", "blue", "green", "green", "black", "black", "grey", "green"))
+library(DataCombine)
+replaceData <- data.frame(from = c("-", "A", "C", "D", "E", "F", "G", "H", "I", "K", 
+                                           "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "X", "Y", "s"), 
+                          to = c("grey", "black", "green", "red", "red", "black", 
+                                             "green", "blue", "black", "blue", "black", "black", "green", 
+                                             "black", "green", "blue", "green", "green", "black", "black", 
+                                             "grey", "green", "green"))
+corr1ST <- corr1S
+corr1ST <- FindReplace(corr1S, "p1", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p2", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p3", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p4", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p5", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p6", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p7", replaceData, from = "from", to = "to", exact = FALSE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p8", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p9", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p10", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+corr1ST <- FindReplace(corr1ST, "p11", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+
+corr1STpos <- subset(corr1ST, corr1ST$logratio >0)
+summary(lm(corr1STpos$logratio~corr1STpos$p2))
+
+```
+Same analysis as above (by type of residue), but focussing specifically on sites with serine at p7 and p5.
+N.B. p7 s is lower case.
+```{r}
+Esses <- subset(corr1, corr1$p7 == "s" & corr1$p5 == "S")
+EssesT <- Esses
+
+library(DataCombine)
+replaceData <- data.frame(from = c("-", "A", "C", "D", "E", "F", "G", "H", "I", "K", 
+                                           "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "X", "Y", "s"), 
+                          to = c("grey", "black", "green", "red", "red", "black", 
+                                             "green", "blue", "black", "blue", "black", "black", "green", 
+                                             "black", "green", "blue", "green", "green", "black", "black", 
+                                             "grey", "green", "green"))
+
+EssesT <- FindReplace(Esses, "p1", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p2", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p3", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p4", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p5", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p6", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p7", replaceData, from = "from", to = "to", exact = FALSE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p8", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p9", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p10", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+EssesT <- FindReplace(EssesT, "p11", replaceData, from = "from", to = "to", exact = TRUE, vector = FALSE)
+
+EssesTpos <- subset(EssesT, EssesT$logratio >0)
+EssesTneg <- subset(EssesT, EssesT$logratio <0)
+
+##### all of these models wrong! repeat analysis if you want to use them
+# N-terminus, maximal and minimal models (reduced stepwise using anova to compare; judged to be same if p-value <0.05, but intermediary models removed for brevity)
+# mod1 <- lm(data=EssesTpos, logratio ~ p1*p2*p3*p4*p6 )
+# mod1.11 <- lm(data=EssesTpos, logratio ~ p2 + p3 + p4 +
+#                                         (p2*p3) + (p2*p4)
+#                                        )
+#   anova(mod1, mod1.11) 
+#   anova(mod1.11)
+#   summary(mod1.11)
+#   
+# # C-terminus, maximal and minimal models (reduced stepwise, but intermediary models removed for brevity)
+# mod2 <- lm(data=EssesTpos, logratio ~ p8*p9*p10*p11)
+#   anova(mod2)
+# 
+# mod2.5 <- lm(data=EssesTpos, logratio ~ p8 + p9 + p10 + p11 +
+#                                         (p8*p9) + 
+#                                         (p10*p11)) 
+# 
+#   anova(mod2.5)
+# summary(mod2.5) #mostly negative determinants
+# 
+# #what if we restrict to p-values < 0.1
+# EssesTposP <- subset(EssesTpos, EssesTpos$p.value < 0.1)
+# # for N-terminus, no residue types significantly explain logratio
+# # for C-terminus, no residue types significantly explain logratio#
+
+
+# plot position 2
+ggplot(data = corr1, aes(x = logratio, y = -log10(p.value), text=Identifier))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "")+
+            geom_point(data = subset(corr1, corr1$p2 == "K"), shape = 17, colour = "orange")+
+            geom_point(data = subset(corr1, corr1$p2 == "L"), shape = 17, colour = "black")+
+            geom_point(data = subset(corr1, corr1$p2 == "R"), shape = 17, colour = "blue")
+
+```
+Test if prolines at pos 8, 9, 10 are correlated with Serines at pos 7 and 5
+My hypothesis is that prolines interfere with AurB phosphorylation of ser5 and so should be surpressed
+```{r}
+#make tables for chi.sq tests
+#using the subset of the data with logratio > 0.15, p<0.1
+
+
+## Pos 7 = S, Pos 5 = S/not S, pos 8 = P/not P------------------------------------------------------------------------
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 == "S" & corr1$p8 == "P")) #n=5
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 == "S" & corr1$p8 != "P")) #n=83
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 != "S" & corr1$p8 == "P")) #n=3
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 != "S" & corr1$p8 != "P")) #n=223
+
+T1 <- as.table(rbind(c(5, 83), c(3, 223)))
+dimnames(T1) <- list(pos5 = c("S", "not S"),
+                    pos8 = c("P", "not P"))
+chisq.test(T1) #may be incorrect because low counts of P. X-squared = 3.242, p-value = 0.07177
+
+## Pos 7 = S, Pos 5 = S/not S, pos 9 = P/not P------------------------------------------------------------------------
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 == "S" & corr1$p9 == "P")) #n=9
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 == "S" & corr1$p9 != "P")) #n=79
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 != "S" & corr1$p9 == "P")) #n=27
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 != "S" & corr1$p9 != "P")) #n=199
+
+T2 <- as.table(rbind(c(9, 79), c(27, 199)))
+dimnames(T2) <- list(pos5 = c("S", "not S"),
+                    pos9 = c("P", "not P"))
+chisq.test(T2) #X-squared = 0.053993, p-value = 0.8163
+
+## Pos 7 = S, Pos 5 = S/not S, pos 10 = P/not P------------------------------------------------------------------------
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 == "S" & corr1$p10 == "P")) #n=7
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 == "S" & corr1$p10 != "P")) #n=81
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 != "S" & corr1$p10 == "P")) #n=11
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 != "S" & corr1$p10 != "P")) #n=215
+
+T3 <- as.table(rbind(c(7, 81), c(11, 215)))
+dimnames(T3) <- list(pos5 = c("S", "not S"),
+                    pos10 = c("P", "not P"))
+chisq.test(T3) # X-squared = 0.61888, p-value = 0.4315
+
+## Pos 7 = S/not S, pos 8 = P/not P------------------------------------------------------------------------
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p8 == "P")) #n=8
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p8 != "P")) #n=306
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p8 == "P")) #n=1
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p8 != "P")) #n=194
+
+T4 <- as.table(rbind(c(8, 306), c(1, 194)))
+dimnames(T4) <- list(pos7 = c("S", "T"),
+                    pos8 = c("P", "not P"))
+chisq.test(T4) # may be incorrect because low counts of P. X-squared = 1.816, p-value = 0.1778
+
+## Pos 7 = S/not S, pos 9 = P/not P------------------------------------------------------------------------
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p9 == "P")) #n=36
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p9 != "P")) #n=278
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p9 == "P")) #n=28
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p9 != "P")) #n=167
+
+T5 <- as.table(rbind(c(36, 278), c(28, 167)))
+dimnames(T5) <- list(pos7 = c("S", "T"),
+                    pos9 = c("P", "not P"))
+chisq.test(T5) #X-squared = 0.67216, p-value = 0.4123
+
+## Pos 7 = S/not S, pos 10 = P/not P------------------------------------------------------------------------
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p10 == "P")) #n=18
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p10 != "P")) #n=296
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p10 == "P")) #n=8
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p10 != "P")) #n=187
+
+T6 <- as.table(rbind(c(18, 296), c(8, 187)))
+dimnames(T6) <- list(pos7 = c("S", "T"),
+                    pos10 = c("P", "not P"))
+chisq.test(T6) # X-squared = 0.36593, p-value = 0.5452
+
+
+#So P may be surpressed at pos 9 when the phospho-residue is threonine
+#however Hiro says this is difficult to test for and get signal above the noise
+#better to test for enrichment
+
+```
+Do a similar thing to test if R is enriched at position 3 when position 5 is serine
+There is no enrichment for position 3 arginine in the presence of position 5 serine, in either all sites or just phosphoserine sites.
+```{r}
+#first test for all top right sites (pos 7 serine or threonine)
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 =="S" & corr1$p3 == "R")) #n=25
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 =="S" & corr1$p3 != "R")) #n=95
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 !="S" & corr1$p3 == "R")) #n=62
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 !="S" & corr1$p3 != "R")) #n=327
+
+T7 <- as.table(rbind(c(275, 95), c(62, 327)))
+dimnames(T7) <- list(pos5 = c("S", "not S"),
+                    pos3 = c("R", "not R"))
+chisq.test(T7) # X-squared = 259.5, df = 1, p-value < 2.2e-16 
+
+#what about only for position 7 serine sites?
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 =="S" & corr1$p3 == "R")) #n=18
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 =="S" & corr1$p3 != "R")) #n=70
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 !="S" & corr1$p3 == "R")) #n=37
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 !="S" & corr1$p3 != "R")) #n=189
+
+T8 <- as.table(rbind(c(18, 70), c(37, 189)))
+dimnames(T8) <- list(pos5 = c("S", "not S"),
+                    pos3 = c("R", "not R"))
+chisq.test(T8) #X-squared = 0.47551, df = 1, p-value = 0.4905
+
+#no, no difference
+
+
+```
+Let's check for position 2 arginine when pos 5 is serine
+Conclusion: When position 5 is a Serine, Arginine is enriched at pos 2 for sites including phosphothreonine or phosphoserine, but not for phosphoserine sites alone.
+```{r}
+#first test for all top right sites (pos 7 serine or threonine)
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 =="S" & corr1$p2 == "R")) #n=32
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 =="S" & corr1$p2 != "R")) #n=88
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 !="S" & corr1$p2 == "R")) #n=55
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p5 !="S" & corr1$p2 != "R")) #n=334
+
+T9 <- as.table(rbind(c(32, 88), c(55, 334)))
+dimnames(T9) <- list(pos5 = c("S", "not S"),
+                    pos3 = c("R", "not R"))
+chisq.test(T9) #X-squared = 9.2923, df = 1, p-value = 0.002301  different! *
+
+#what about only for position 7 serine sites?
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 =="S" & corr1$p2 == "R")) #n=27
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 =="S" & corr1$p2 != "R")) #n=61
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 !="S" & corr1$p2 == "R")) #n=48
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 !="S" & corr1$p2 != "R")) #n=178
+
+T10 <- as.table(rbind(c(27, 61), c(48, 178)))
+dimnames(T10) <- list(pos5 = c("S", "not S"),
+                    pos3 = c("R", "not R"))
+chisq.test(T10) #X-squared = 2.6088, df = 1, p-value = 0.1063 
+
+#check for pos 7 threonine sites
+
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p5 =="S" & corr1$p2 == "R")) #n=5
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p5 =="S" & corr1$p2 != "R")) #n=27
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p5 !="S" & corr1$p2 == "R")) #n=7
+nrow(subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "t" & corr1$p5 !="S" & corr1$p2 != "R")) #n=156
+
+T11 <- as.table(rbind(c(5, 27), c(7, 156)))
+dimnames(T11) <- list(pos5 = c("S", "not S"),
+                    pos3 = c("R", "not R"))
+chisq.test(T11) #may be incorrect due to low values X-squared = 4.1461, df = 1, p-value = 0.04173 
+
+ggplot(data = corr1, aes(x = logratio, y = -log10(p.value), text=Identifier))+
+            theme_light(base_size = 15, base_family = "")+
+            theme(plot.margin = unit(c(0, 1, 1, 1), "lines"))+
+            geom_point(colour = "grey") +
+            scale_x_continuous(limits = c(-2, 3), labels = c("1/4", "1/2", "1x", "2x", "4x", "8x"))+
+            scale_y_continuous(limits = c(0, 4), labels = c("1", "0.1", "0.01", "0.001", "0.0001"))+
+            labs(x = NULL, y = "p value", title = "")+
+            geom_point(data = subset(corr1, corr1$logratio > 0.15 & corr1$p.value < 0.1 & corr1$p7 == "s" & corr1$p5 =="S" & corr1$p2 == "R"), shape = 17, colour = "orange")
+
+```
+
+graphs to show number of sites in each subset
+```{r}
+corr1$bin<- factor(NA, levels = c("<0.001", "0.001-0.005", "0.005-0.01", "0.01-0.05", "0.05-0.1", "> 0.1", NA), ordered = TRUE)
+corr1$bin[which(corr1$p.value<=0.001)] <- "<0.001"
+corr1$bin[which(corr1$p.value>0.001 & corr1$p.value <= 0.005)] <- "0.001-0.005"
+corr1$bin[which(corr1$p.value>0.005 & corr1$p.value <= 0.01)] <- "0.005-0.01"
+corr1$bin[which(corr1$p.value>0.01 & corr1$p.value <= 0.05)] <- "0.01-0.05"
+corr1$bin[which(corr1$p.value>0.05 & corr1$p.value <= 0.1)] <- "0.05-0.1"
+corr1$bin[which(corr1$p.value>0.1)] <- "> 0.1"
+
+
+
+
+library(ggplot2)
+ggplot(corr1, aes(x=bin))+
+  geom_bar()
+
+ggplot(subset(corr1, corr1$p.value < 0.1), aes(x=bin))+
+  geom_bar()
+
+
+corr1$conBin<- factor(NA, levels = c("0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0", "1.0-1.1", "1.1-1.2", "> 1.2"), ordered = TRUE)
+corr1$conBin[which(corr1$Consensus<0.6)] <- "0.5-0.6"
+corr1$conBin[which(corr1$Consensus>0.6 & corr1$Consensus <= 0.7)] <- "0.6-0.7"
+corr1$conBin[which(corr1$Consensus>0.7 & corr1$Consensus <= 0.8)] <- "0.7-0.8"
+corr1$conBin[which(corr1$Consensus>0.8 & corr1$Consensus <= 0.9)] <- "0.8-0.9"
+corr1$conBin[which(corr1$Consensus>0.9 & corr1$Consensus <= 1.0)] <- "0.9-1.0"
+corr1$conBin[which(corr1$Consensus>1.0 & corr1$Consensus <= 1.1)] <- "1.0-1.1"
+corr1$conBin[which(corr1$Consensus>1.1 & corr1$Consensus <= 1.2)] <- "1.1-1.2"
+corr1$conBin[which(corr1$Consensus>1.2)] <- "> 1.2"
+
+ggplot(corr1, aes(x=conBin))+
+  geom_bar()
+
+```
+
+I summarised the counts of proteins with the different GO terms, and how many had high confidence 14-3-3 binding site predictions. Now I will try to graph it.
+```{r}
+GO14 <- read.csv("\\\\csce.datastore.ed.ac.uk/csce/biology/users/s0906576/Research/Projects/Regulators/14-3-3/R18/LFQ_massSpec/R18_125678_complexesAndInteractionsAnalysis/InteractionScript_outputs/countdata_GOterm_1433SitePresence2.csv")
+
+library(ggplot2)
+
+GO14$X14.3.3.binding <- relevel(GO14$X14.3.3.binding, "no 14-3-3 site")
+GO14$go.term <- relevel(GO14$go.term, "other proteins")
+
+ggplot(GO14, aes(x= go.term, y=percentage.of.proteins, fill = X14.3.3.binding))+
+  theme_bw()+
+  theme(text = element_text(size = 15))+
+  geom_bar(position="stack", stat="identity", colour = "black")+
+  labs(fill = "", x = "", y = "percentage of proteins")+
+  scale_y_continuous(breaks = seq(0, 100, by = 25), expand = expansion(add = c(0, 30)))+
+  scale_fill_manual(values = c("#999999", "#E69E00"))+
+  facet_wrap(~ type, scales = "free")
+
+#similar graph for whether 14-3-3 pedicted proteins increase or decrease
+#416 with 14-3-3, 263 increased
+#1088 without 14-3-3, 580 increased
+dat10<- data.frame("14-3-3" = c("14-3-3", "No 14-3-3", "14-3-3", "No 14-3-3"), "Inc.Dec" =  c("Increase", "Increase", "Decrease", "Decrease"), "Value" = c(63.22, 53.31, 36.78, 46.69))
+ggplot(dat10, aes(x= X14.3.3, y=Value, fill = Inc.Dec))+
+  theme_bw()+
+  theme(text = element_text(size = 15))+
+  geom_bar(position="stack", stat="identity", colour = "black")+
+  labs(fill = "", x = "", y = "percentage of proteins")+
+  scale_x_discrete(labels = c("", ""))+
+  scale_y_continuous(breaks = seq(0, 100, by = 25), expand = expansion(add = c(0, 30)))+
+  scale_fill_manual(values = c("#999999", "#E69E00"))
+
+
+```
+split x-axis and y-axis of volcano plot into slices, plot proportion with HC consensus as stacked bar charts
+```{r}
+## X-axis binning
+range(Have.pvalue$logratio)
+Have.pvalue$xbin <- NA
+
+Have.pvalue[Have.pvalue$logratio < -0.5,]$xbin <- 1
+Have.pvalue[Have.pvalue$logratio > -0.5 & Have.pvalue$logratio < -0,]$xbin <- 2
+Have.pvalue[Have.pvalue$logratio > 0 & Have.pvalue$logratio < 0.5,]$xbin <- 3
+Have.pvalue[Have.pvalue$logratio > 0.5 ,]$xbin <- 4
+
+nrow(Have.pvalue[Have.pvalue$xbin == 1,]) #145
+nrow(Have.pvalue[Have.pvalue$xbin == 2,]) #536
+nrow(Have.pvalue[Have.pvalue$xbin == 3,]) #636
+nrow(Have.pvalue[Have.pvalue$xbin == 4,]) #187
+
+
+
+# how many have 14-3-3 predictions?
+nrow(Have.pvalue[Have.pvalue$xbin == 1 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #28 with, 117 without
+nrow(Have.pvalue[Have.pvalue$xbin == 2 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #125 with, 411 without
+nrow(Have.pvalue[Have.pvalue$xbin == 3 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #193 with, 443 without
+nrow(Have.pvalue[Have.pvalue$xbin == 4 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #70 with, 117 without
+
+
+xbinCount <- read.csv("\\\\csce.datastore.ed.ac.uk/csce/biology/users/s0906576/Research/Projects/Regulators/14-3-3/R18/LFQ_massSpec/R18_125678_complexesAndInteractionsAnalysis/InteractionScript_outputs/countdata_xbin_1433SitePresence.csv")
+xbinCount$X14.3.3.predition <- relevel(xbinCount$X14.3.3.predition, "no 14-3-3 site")
+
+library(ggplot2)
+ggplot(xbinCount, aes(x= bin, y=percentage.of.proteins, fill = X14.3.3.predition))+
+  theme_bw()+
+  geom_bar(position="stack", stat="identity")+
+  labs(fill = "", x = "", y = "percentage of proteins")+
+  scale_y_continuous(breaks = seq(0, 100, by = 25), expand = expansion(add = c(0, 30)))
+
+## Chi-sq tests comparing each group to the rest of the proteins
+  X1 <- as.table(rbind(c(28, 117), c(388, 971)))
+  chisq.test(X1) #X-squared = 5.1384, df = 1, p-value = 0.0234 N.S.
+  X2 <- as.table(rbind(c(125, 411), c(291, 677)))
+  chisq.test(X2) #X-squared = 7.5015, df = 1, p-value = 0.006165 **
+  X3 <- as.table(rbind(c(193, 443), c(223, 645)))
+  chisq.test(X3) #X-squared = 3.7453, df = 1, p-value = 0.05296 .
+  X4 <- as.table(rbind(c(70, 117), c(346, 971)))
+  chisq.test(X4) #X-squared = 9.6448, df = 1, p-value = 0.001899 ***
+
+  
+
+
+range(Have.pvalue$pairedp.value)
+Have.pvalue$ybin <- NA
+
+Have.pvalue[Have.pvalue$pairedp.value < 0.001,]$ybin <- 1
+Have.pvalue[Have.pvalue$pairedp.value > 0.001 & Have.pvalue$pairedp.value < 0.01,]$ybin <- 2
+Have.pvalue[Have.pvalue$pairedp.value > 0.01 & Have.pvalue$pairedp.value < 0.1,]$ybin <- 3
+Have.pvalue[Have.pvalue$pairedp.value > 0.1 & Have.pvalue$pairedp.value < 1,]$ybin <- 4
+
+nrow(Have.pvalue[Have.pvalue$ybin == 1,]) #4
+nrow(Have.pvalue[Have.pvalue$ybin == 2,]) #30
+nrow(Have.pvalue[Have.pvalue$ybin == 3,]) #247
+nrow(Have.pvalue[Have.pvalue$ybin == 4,]) #1223
+
+# how many have 14-3-3 predictions?
+nrow(Have.pvalue[Have.pvalue$ybin == 1 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #3 with, 1 without
+nrow(Have.pvalue[Have.pvalue$ybin == 2 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #10 with, 20 without
+nrow(Have.pvalue[Have.pvalue$ybin == 3 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #73 with, 174 without
+nrow(Have.pvalue[Have.pvalue$ybin == 4 & Have.pvalue$uniprot %in% HC14.3.3WD_1,]) #330 with, 893
+
+ybinCount <- read.csv("\\\\csce.datastore.ed.ac.uk/csce/biology/users/s0906576/Research/Projects/Regulators/14-3-3/R18/LFQ_massSpec/R18_125678_complexesAndInteractionsAnalysis/InteractionScript_outputs/countdata_ybin_1433SitePresence.csv")
+ybinCount$X14.3.3.predition <- relevel(ybinCount$X14.3.3.predition, "no 14-3-3 site")
+
+ggplot(ybinCount, aes(x= ybin, y=number.of.proteins, fill = X14.3.3.predition))+
+  theme_bw()+
+  geom_bar(position="fill", stat="identity")
+  ##chi squared tests
+  Y1 <- as.table(rbind(c(3, 1), c(413, 1087)))
+  chisq.test(Y1) #X-squared = 2.4331, df = 1, p-value = 0.1188 N.S.
+  Y2 <- as.table(rbind(c(10, 20), c(406, 1068)))
+  chisq.test(Y2) #X-squared = 0.24564, df = 1, p-value = 0.6202 N.S.
+  Y3 <- as.table(rbind(c(73, 174), c(343, 914)))
+  chisq.test(Y3) #X-squared = 0.42317, df = 1, p-value = 0.5154 N.S.
+  Y4 <- as.table(rbind(c(330, 893), c(86, 195)))
+  chisq.test(Y4) #X-squared = 1.3227, df = 1, p-value = 0.2501 N.S.
+
+
+```
+
