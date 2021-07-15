@@ -487,8 +487,8 @@ p1<-ggplot(data = d, aes(x = logratio, y = -log10(pairedp.value), text=geneName)
 
 library(plotly)
 p<-ggplotly(p1, tooltip = 'text')
-Sys.setenv("plotly_username"="C.Repton")
-Sys.setenv("plotly_api_key"="Qoixsc6k4EgXg34oG5SY")
+Sys.setenv("plotly_username"="#########")
+Sys.setenv("plotly_api_key"="#####################")
 api_create(p, filename = "R18_interactiveGraph")
   
   
